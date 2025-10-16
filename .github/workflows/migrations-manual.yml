@@ -1,0 +1,209 @@
+name: Manual Migrations Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente alvo"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      action:
+        description: "Ação a executar"
+        required: true
+        type: choice
+        options:
+          - up
+          - down-1
+          - down-all
+          - version
+          - force
+      version:
+        description: "Versão (apenas para action=force)"
+        required: false
+        type: string
+      confirmation:
+        description: "Digite CONFIRM para executar down-all ou force em production"
+        required: false
+        type: string
+
+env:
+  MIGRATE_VERSION: "v4.17.0"
+
+jobs:
+  execute-migration:
+    name: Execute Migration
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Validate dangerous operations
+        if: |
+          (github.event.inputs.action == 'down-all' || github.event.inputs.action == 'force') &&
+          github.event.inputs.environment == 'production' &&
+          github.event.inputs.confirmation != 'CONFIRM'
+        run: |
+          echo "❌ ERRO: Operação perigosa em PRODUCTION requer confirmação!"
+          echo "   Digite 'CONFIRM' no campo de confirmação."
+          exit 1
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get database credentials from Secrets Manager
+        id: get-secret
+        run: |
+          echo "🔐 Buscando credenciais do AWS Secrets Manager..."
+          echo "Secret Name: ${{ secrets.AWS_SECRET_NAME }}"
+          echo "Region: ${{ secrets.AWS_REGION }}"
+
+          # Buscar o secret
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id ${{ secrets.AWS_SECRET_NAME }} \
+            --query SecretString \
+            --output text)
+
+          if [ -z "$SECRET_JSON" ]; then
+            echo "❌ Erro: Não foi possível recuperar o secret!"
+            echo "Verifique se o secret existe e se as permissões IAM estão corretas."
+            exit 1
+          fi
+
+          # Debug: mostrar estrutura do JSON (sem valores sensíveis)
+          echo "Estrutura do secret (keys): $(echo $SECRET_JSON | jq 'keys')"
+
+          # Extrair credenciais
+          DB_USER=$(echo $SECRET_JSON | jq -r '.username')
+          DB_PASSWORD=$(echo $SECRET_JSON | jq -r '.password')
+
+          if [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ] || [ "$DB_USER" == "null" ] || [ "$DB_PASSWORD" == "null" ]; then
+            echo "❌ Erro: Credenciais inválidas no secret!"
+            echo "Username presente: $([ -n "$DB_USER" ] && echo 'sim' || echo 'não')"
+            echo "Password presente: $([ -n "$DB_PASSWORD" ] && echo 'sim' || echo 'não')"
+            exit 1
+          fi
+
+          # Mascarar senha nos logs
+          echo "::add-mask::$DB_PASSWORD"
+
+          # Exportar para próximos steps
+          echo "DB_USER=$DB_USER" >> $GITHUB_OUTPUT
+          echo "DB_PASSWORD=$DB_PASSWORD" >> $GITHUB_OUTPUT
+
+          echo "✅ Credenciais recuperadas com sucesso!"
+          echo "Username: $DB_USER"
+
+      - name: Install migrate tool
+        run: |
+          echo "📦 Instalando golang-migrate ${{ env.MIGRATE_VERSION }}..."
+          curl -L https://github.com/golang-migrate/migrate/releases/download/${{ env.MIGRATE_VERSION }}/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/local/bin/migrate
+          migrate -version
+
+      - name: Show current version
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          echo "📊 Versão atual do banco (${{ github.event.inputs.environment }}):"
+          echo "Host: $DB_HOST"
+          echo "Port: $DB_PORT"
+          echo "Database: $DB_NAME"
+          echo "User: $DB_USER"
+
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+
+          migrate -path internal/database/migrations -database "$DATABASE_URL" version || echo "Nenhuma migration aplicada"
+
+      - name: Execute UP
+        if: github.event.inputs.action == 'up'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          echo "⬆️  Aplicando migrations UP em ${{ github.event.inputs.environment }}..."
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+          migrate -path internal/database/migrations -database "$DATABASE_URL" up
+          echo "✅ Migrations aplicadas com sucesso!"
+
+      - name: Execute DOWN-1
+        if: github.event.inputs.action == 'down-1'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          echo "⬇️  Revertendo última migration em ${{ github.event.inputs.environment }}..."
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+          migrate -path internal/database/migrations -database "$DATABASE_URL" down 1
+          echo "✅ Migration revertida com sucesso!"
+
+      - name: Execute DOWN-ALL
+        if: github.event.inputs.action == 'down-all'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          echo "⚠️  ATENÇÃO: Revertendo TODAS as migrations em ${{ github.event.inputs.environment }}!"
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+          migrate -path internal/database/migrations -database "$DATABASE_URL" down
+          echo "✅ Todas as migrations revertidas!"
+
+      - name: Execute FORCE
+        if: github.event.inputs.action == 'force'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            echo "❌ ERRO: Versão não informada para action=force"
+            exit 1
+          fi
+
+          echo "⚠️  Forçando versão ${{ github.event.inputs.version }} em ${{ github.event.inputs.environment }}..."
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+          migrate -path internal/database/migrations -database "$DATABASE_URL" force ${{ github.event.inputs.version }}
+          echo "✅ Versão forçada com sucesso!"
+
+      - name: Show final version
+        if: always()
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ steps.get-secret.outputs.DB_USER }}
+          DB_PASSWORD: ${{ steps.get-secret.outputs.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+        run: |
+          echo "📊 Versão final do banco (${{ github.event.inputs.environment }}):"
+          DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+          migrate -path internal/database/migrations -database "$DATABASE_URL" version || echo "Nenhuma migration aplicada"

@@ -32,14 +32,14 @@ func (api ApiHandler) RegisterUserHandler(request events.APIGatewayProxyRequest)
 		}, err
 	}
 
-	if registerUser.Username == "" && registerUser.Password == "" {
+	if registerUser.Email == "" && registerUser.Senha == "" {
 		return events.APIGatewayProxyResponse{
 			Body:       "Invalid request",
 			StatusCode: http.StatusBadRequest,
 		}, fmt.Errorf("missing parameters")
 	}
 
-	userExists, err := api.dbStore.DoesUserExist(registerUser.Username)
+	userExists, err := api.dbStore.DoesUserExist(registerUser.Email)
 
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -80,8 +80,8 @@ func (api ApiHandler) RegisterUserHandler(request events.APIGatewayProxyRequest)
 
 func (api ApiHandler) LoginUserHandler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	type LoginRequest struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Email string `json:"email"`
+		Senha string `json:"senha"`
 	}
 
 	var loginRequest LoginRequest
@@ -95,7 +95,7 @@ func (api ApiHandler) LoginUserHandler(request events.APIGatewayProxyRequest) (e
 		}, err
 	}
 
-	user, err := api.dbStore.GetUser(loginRequest.Username)
+	user, err := api.dbStore.GetUser(loginRequest.Email)
 
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -104,7 +104,7 @@ func (api ApiHandler) LoginUserHandler(request events.APIGatewayProxyRequest) (e
 		}, err
 	}
 
-	if !types.ValidatePassword(user.PasswordHash, loginRequest.Password) {
+	if !types.ValidatePassword(user.SenhaHash, loginRequest.Senha) {
 		return events.APIGatewayProxyResponse{
 			Body:       "Invalid Credentials",
 			StatusCode: http.StatusBadRequest,

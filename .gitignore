@@ -4,9 +4,11 @@
 *.dll
 *.so
 *.dylib
+migrate
 
 # Test binary, built with `go test -c`
 *.test
+coverage.html
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
@@ -20,3 +22,11 @@
 .vscode
 
 dist
+scripts
+cmd
+lambda/run-migrations/
+
+# OS
+.DS_Store
+Thumbs.db
+

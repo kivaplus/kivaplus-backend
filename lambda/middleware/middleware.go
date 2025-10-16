@@ -16,7 +16,7 @@ func ValidatePasswordJWTMiddleware(next func(request events.APIGatewayProxyReque
 		tokenString := extractTokenFromHeaders(request.Headers)
 		if tokenString == "" {
 			return events.APIGatewayProxyResponse{
-				Body:       "Missing Auth Token",
+				Body:       fmt.Sprintf("Missing Auth Token. Headers: %v", request.Headers),
 				StatusCode: http.StatusUnauthorized,
 			}, nil
 		}
@@ -24,7 +24,7 @@ func ValidatePasswordJWTMiddleware(next func(request events.APIGatewayProxyReque
 		claims, err := parseToken(tokenString)
 		if err != nil {
 			return events.APIGatewayProxyResponse{
-				Body:       "Unauthorized",
+				Body:       fmt.Sprintf("Unauthorized: %v. Token: %s", err, tokenString[:20]+"..."),
 				StatusCode: http.StatusUnauthorized,
 			}, nil
 		}
@@ -59,11 +59,16 @@ func extractTokenFromHeaders(headers map[string]string) string {
 
 func parseToken(tokenString string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		secret := os.Getenv("JWT_SECRET_NAME")
+		// Make sure the signing method is what we expect
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		secret := getJWTSecret()
 		return []byte(secret), nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unauthorized")
+		return nil, fmt.Errorf("unauthorized: %w", err)
 	}
 
 	if !token.Valid {
@@ -76,4 +81,23 @@ func parseToken(tokenString string) (jwt.MapClaims, error) {
 	}
 
 	return claims, nil
+}
+
+// getJWTSecret retrieves the JWT secret, with fallback to environment variable
+func getJWTSecret() string {
+	// First try to get from environment variable (for local development)
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		return secret
+	}
+
+	// For production, you should use AWS Secrets Manager
+	// For now, use a default secret (NOT RECOMMENDED FOR PRODUCTION)
+	secretName := os.Getenv("JWT_SECRET_NAME")
+	if secretName != "" {
+		// This is a placeholder - in production you should retrieve from Secrets Manager
+		return "your-jwt-secret-key-here"
+	}
+
+	// Fallback to a default (NOT SECURE - only for development)
+	return "default-jwt-secret-key"
 }

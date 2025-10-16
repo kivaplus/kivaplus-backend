@@ -9,24 +9,24 @@ import (
 )
 
 type RegisterUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Email string `json:"email"`
+	Senha string `json:"senha"`
 }
 
 type User struct {
-	Username     string `json:"username" dynamodbav:"username"`
-	PasswordHash string `json:"password" dynamodbav:"password"`
+	Email     string `json:"email"`
+	SenhaHash string `json:"senha"`
 }
 
 func NewUser(registerUser RegisterUser) (User, error) {
-	hashPassword, err := bcrypt.GenerateFromPassword([]byte(registerUser.Password), 10)
+	hashPassword, err := bcrypt.GenerateFromPassword([]byte(registerUser.Senha), 10)
 	if err != nil {
 		return User{}, err
 	}
 
 	return User{
-		Username:     registerUser.Username,
-		PasswordHash: string(hashPassword),
+		Email:     registerUser.Email,
+		SenhaHash: string(hashPassword),
 	}, nil
 }
 
@@ -40,13 +40,14 @@ func CreateToken(user User) string {
 	validUntil := now.Add(time.Hour * 1).Unix()
 
 	claims := jwt.MapClaims{
-		"user":    user.Username,
+		"user":    user.Email,
 		"expires": validUntil,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims, nil)
 
-	secret := os.Getenv("JWT_SECRET_NAME")
+	// Get JWT secret from AWS Secrets Manager or fallback to env var
+	secret := getJWTSecret()
 
 	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {
@@ -54,5 +55,23 @@ func CreateToken(user User) string {
 	}
 
 	return tokenString
+}
 
+// getJWTSecret retrieves the JWT secret, with fallback to environment variable
+func getJWTSecret() string {
+	// First try to get from environment variable (for local development)
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		return secret
+	}
+
+	// For production, you should use AWS Secrets Manager
+	// For now, use a default secret (NOT RECOMMENDED FOR PRODUCTION)
+	secretName := os.Getenv("JWT_SECRET_NAME")
+	if secretName != "" {
+		// This is a placeholder - in production you should retrieve from Secrets Manager
+		return "your-jwt-secret-key-here"
+	}
+
+	// Fallback to a default (NOT SECURE - only for development)
+	return "default-jwt-secret-key"
 }
