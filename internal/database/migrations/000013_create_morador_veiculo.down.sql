@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS morador_veiculo CASCADE;

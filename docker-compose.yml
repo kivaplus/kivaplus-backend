@@ -1,0 +1,107 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: kivaplus-postgres
+    environment:
+      POSTGRES_DB: kivaplus_local
+      POSTGRES_USER: kivaplus
+      POSTGRES_PASSWORD: kivaplus123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kivaplus -d kivaplus_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kivaplus-network
+
+  # LocalStack for AWS Services (Optional)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: kivaplus-localstack
+    environment:
+      - SERVICES=secretsmanager,lambda,apigateway
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_TMP_FOLDER=/tmp/localstack
+    ports:
+      - "4566:4566" # LocalStack main port
+      - "4571:4571" # LocalStack health check
+    volumes:
+      - "/tmp/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kivaplus-network
+    profiles:
+      - localstack # Optional service, activate with --profile localstack
+
+  # Go Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: kivaplus-app
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://kivaplus:kivaplus123@kivaplus-postgres:5432/kivaplus_local?sslmode=disable
+      - JWT_SECRET=local-development-secret-key-not-for-production
+      - LOG_LEVEL=debug
+      - REDIS_URL=redis://kivaplus-redis:6379
+    volumes:
+      - .:/app
+      - go_modules:/go/pkg/mod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kivaplus-network
+    profiles:
+      - app # Optional service, activate with --profile app
+    restart: unless-stopped
+    command: ["go", "run", "cmd/local-server/main.go"]
+
+  # Redis for Caching (Optional)
+  redis:
+    image: redis:7-alpine
+    container_name: kivaplus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kivaplus-network
+    profiles:
+      - cache # Optional service
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  go_modules:
+    driver: local
+
+networks:
+  kivaplus-network:
+    driver: bridge

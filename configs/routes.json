@@ -1,0 +1,253 @@
+{
+  "version": "1.0.0",
+  "groups": [
+    {
+      "name": "authentication",
+      "description": "Public authentication routes",
+      "routes": [
+        {
+          "name": "register",
+          "method": "POST",
+          "path": "/register",
+          "path_pattern": "^/register$",
+          "public": true,
+          "roles": null,
+          "resource": "",
+          "action": "",
+          "scope": "",
+          "lambda": "auth",
+          "description": "User registration"
+        },
+        {
+          "name": "login",
+          "method": "POST",
+          "path": "/login",
+          "path_pattern": "^/login$",
+          "public": true,
+          "roles": null,
+          "resource": "",
+          "action": "",
+          "scope": "",
+          "lambda": "auth",
+          "description": "User login"
+        },
+        {
+          "name": "refresh_token",
+          "method": "POST",
+          "path": "/token/refresh",
+          "path_pattern": "^/token/refresh$",
+          "public": true,
+          "roles": null,
+          "resource": "",
+          "action": "",
+          "scope": "",
+          "lambda": "auth",
+          "description": "Refresh access token"
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "description": "Health check routes",
+      "routes": [
+        {
+          "name": "health",
+          "method": "GET",
+          "path": "/health",
+          "path_pattern": "^/health$",
+          "public": true,
+          "roles": null,
+          "resource": "",
+          "action": "",
+          "scope": "",
+          "lambda": "auth",
+          "description": "Health check endpoint"
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "User profile management",
+      "routes": [
+        {
+          "name": "get_profile",
+          "method": "GET",
+          "path": "/profile",
+          "path_pattern": "^/profile$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "resource": "profile",
+          "action": "read",
+          "scope": "own",
+          "lambda": "users",
+          "description": "Get user profile"
+        },
+        {
+          "name": "update_profile",
+          "method": "PUT",
+          "path": "/profile",
+          "path_pattern": "^/profile$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "resource": "profile",
+          "action": "update",
+          "scope": "own",
+          "lambda": "users",
+          "description": "Update user profile"
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "description": "User management routes",
+      "routes": [
+        {
+          "name": "list_users",
+          "method": "GET",
+          "path": "/usuarios",
+          "path_pattern": "^/usuarios$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "usuarios",
+          "action": "list",
+          "scope": "global",
+          "lambda": "users",
+          "description": "List all users"
+        },
+        {
+          "name": "get_user",
+          "method": "GET",
+          "path": "/usuarios/{id}",
+          "path_pattern": "^/usuarios/\\w+$",
+          "public": false,
+          "roles": [
+            1,
+            2
+          ],
+          "resource": "usuarios",
+          "action": "read",
+          "scope": "own",
+          "lambda": "users",
+          "description": "Get specific user"
+        },
+        {
+          "name": "update_user",
+          "method": "PUT",
+          "path": "/usuarios/{id}",
+          "path_pattern": "^/usuarios/\\w+$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "resource": "usuarios",
+          "action": "update",
+          "scope": "own",
+          "lambda": "users",
+          "description": "Update user"
+        },
+        {
+          "name": "delete_user",
+          "method": "DELETE",
+          "path": "/usuarios/{id}",
+          "path_pattern": "^/usuarios/\\w+$",
+          "public": false,
+          "roles": [
+            1
+          ],
+          "resource": "usuarios",
+          "action": "delete",
+          "scope": "own",
+          "lambda": "users",
+          "description": "Auto-generated route for DELETE /usuarios/{id}"
+        }
+      ]
+    },
+    {
+      "name": "condominiums",
+      "description": "Condominium management routes",
+      "routes": [
+        {
+          "name": "list_condominiums",
+          "method": "GET",
+          "path": "/condominios",
+          "path_pattern": "^/condominios$",
+          "public": false,
+          "roles": [
+            1
+          ],
+          "resource": "condominios",
+          "action": "list",
+          "scope": "global",
+          "lambda": "users",
+          "description": "List all condominiums"
+        },
+        {
+          "name": "create_condominium",
+          "method": "POST",
+          "path": "/condominios",
+          "path_pattern": "^/condominios$",
+          "public": false,
+          "roles": [
+            1
+          ],
+          "resource": "condominios",
+          "action": "create",
+          "scope": "global",
+          "lambda": "users",
+          "description": "Create new condominium"
+        },
+        {
+          "name": "get_condominium",
+          "method": "GET",
+          "path": "/condominios/{id}",
+          "path_pattern": "^/condominios/\\d+$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "resource": "condominios",
+          "action": "read",
+          "scope": "condominium",
+          "lambda": "users",
+          "description": "Get specific condominium"
+        },
+        {
+          "name": "update_condominium",
+          "method": "PUT",
+          "path": "/condominios/{id}",
+          "path_pattern": "^/condominios/\\d+$",
+          "public": false,
+          "roles": [
+            1,
+            2
+          ],
+          "resource": "condominios",
+          "action": "update",
+          "scope": "condominium",
+          "lambda": "users",
+          "description": "Update condominium"
+        }
+      ]
+    }
+  ]
+}
