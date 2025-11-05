@@ -13,7 +13,6 @@ type User struct {
 	PasswordHash string     `json:"-"` // Never expose password hash in JSON
 	Active       bool       `json:"active"`
 	LastAccess   *time.Time `json:"last_access,omitempty"`
-	PersonID     *int64     `json:"person_id,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`

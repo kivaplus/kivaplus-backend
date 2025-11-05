@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/kivaplus/kivaplus-backend/internal/shared/jwt"
 	"github.com/kivaplus/kivaplus-backend/internal/shared/logger"
@@ -25,7 +26,7 @@ func NewLogin(userRepo ports.UserRepository, personRepo ports.PersonRepository, 
 		userRepo:   userRepo,
 		personRepo: personRepo,
 		roleRepo:   roleRepo,
-		jwtService: jwt.NewJWTService(),
+		jwtService: jwt.GetJWTService(), // Use optimized singleton
 		logger:     logger,
 	}
 }
@@ -86,9 +87,10 @@ func (uc *Login) Execute(ctx context.Context, req ports.LoginRequest) (*ports.Lo
 
 	uc.logger.Info("Profile status checked", "userID", user.ID, "profileStatus", profileStatus)
 
-	// Generate JWT tokens (access and refresh)
+	// Generate JWT tokens (access and refresh) - Use optimized method
 	userIDStr := fmt.Sprintf("%d", user.ID)
-	accessToken, err := uc.jwtService.GenerateToken(userIDStr, user.Email, roles, profileStatus)
+	tokenVersion := time.Now().Unix() // Generate version for token invalidation
+	accessToken, err := uc.jwtService.GenerateToken(userIDStr, user.Email, profileStatus, tokenVersion)
 	if err != nil {
 		uc.logger.Error("Failed to generate access token", "error", err, "email", req.Email)
 		return nil, fmt.Errorf("failed to generate access token: %w", err)

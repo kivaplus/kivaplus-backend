@@ -56,7 +56,31 @@ func (r *AddressPostgresRepository) Delete(ctx context.Context, id int64) error 
 
 // GetByID implements ports.AddressRepository.
 func (r *AddressPostgresRepository) GetByID(ctx context.Context, id int64) (*domain.Address, error) {
-	panic("unimplemented")
+	query := `
+		SELECT id, zip_code, street, num, complement, neighborhood, city, state, country, created_at, updated_at
+		FROM address
+		WHERE id = $1`
+
+	address := &domain.Address{}
+	err := r.db.DB.QueryRowContext(ctx, query, id).Scan(
+		&address.ID,
+		&address.ZipCode,
+		&address.Street,
+		&address.Number,
+		&address.Complement,
+		&address.Neighborhood,
+		&address.City,
+		&address.State,
+		&address.Country,
+		&address.CreatedAt,
+		&address.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address by ID: %w", err)
+	}
+
+	return address, nil
 }
 
 // Update implements ports.AddressRepository.

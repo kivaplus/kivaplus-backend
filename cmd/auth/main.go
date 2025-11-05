@@ -56,6 +56,8 @@ func handleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 		return authHandler.Login(ctx, request)
 	case request.HTTPMethod == "POST" && request.Path == "/token/refresh":
 		return authHandler.RefreshToken(ctx, request)
+	case request.HTTPMethod == "GET" && request.Path == "/health":
+		return authHandler.Health(ctx, request)
 	default:
 		return events.APIGatewayProxyResponse{
 			StatusCode: 404,

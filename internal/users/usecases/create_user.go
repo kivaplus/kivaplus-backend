@@ -78,20 +78,26 @@ func (uc *CreateUser) Execute(ctx context.Context, req ports.CreateUserRequest) 
 		return nil, fmt.Errorf("failed to save user: %w", err)
 	}
 
-	// 2. Create person record
+	// 2. Create person record without address (address_id will be NULL)
 	person, err := domain.NewPerson(req.Name, req.Email, user.ID)
 	if err != nil {
 		uc.logger.Error("Failed to create person domain object", "error", err)
 		return nil, fmt.Errorf("failed to create person: %w", err)
 	}
 
+	// AddressID is already set to nil in NewPerson function
+	uc.logger.Info("Creating person with marital status", "maritalStatus", person.MaritalStatus, "name", person.Name)
+
 	if err := uc.personRepo.Create(ctx, person); err != nil {
-		uc.logger.Error("Failed to save person to repository", "error", err, "userID", user.ID)
+		uc.logger.Error("Failed to save person to repository", "error", err, "userID", user.ID, "maritalStatus", person.MaritalStatus)
 		return nil, fmt.Errorf("failed to save person: %w", err)
 	}
 
+	// Note: No need to update user with person_id anymore
+	// The relationship is maintained through person.user_id
+
 	// 3. Assign default role
-	defaultRoleID := 3 // Sindico role
+	defaultRoleID := 3 // Sindico role (default for new users)
 	uc.logger.Info("Assigning default role", "userID", user.ID, "roleID", defaultRoleID)
 	if err := uc.roleRepo.AddUserRole(ctx, user.ID, defaultRoleID, nil); err != nil {
 		uc.logger.Error("Failed to assign default role", "error", err, "userID", user.ID, "roleID", defaultRoleID)
@@ -102,8 +108,7 @@ func (uc *CreateUser) Execute(ctx context.Context, req ports.CreateUserRequest) 
 	uc.logger.Info("User created successfully", "email", req.Email, "userID", user.ID)
 
 	return &ports.CreateUserResponse{
-		User:    user,
-		Person:  person,
-		Message: "User created successfully.",
+		User:   user,
+		Person: person,
 	}, nil
 }

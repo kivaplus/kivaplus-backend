@@ -1,21 +1,29 @@
 module github.com/kivaplus/kivaplus-backend
 
-go 1.24.0
+go 1.23.0
 
-toolchain go1.24.8
+toolchain go1.23.3
 
 require (
 	github.com/aws/aws-lambda-go v1.49.0
+	github.com/aws/aws-sdk-go-v2 v1.39.4
 	github.com/aws/aws-sdk-go-v2/config v1.31.15
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.9
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.52.4
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/lib/pq v1.10.9
-	golang.org/x/crypto v0.43.0
+	github.com/redis/go-redis/v9 v9.7.0
+	golang.org/x/crypto v0.36.0
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.39.4 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -33,6 +41,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.9 // indirect
 	github.com/aws/smithy-go v1.23.1 // indirect
-	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.11.1
 )

@@ -3,10 +3,10 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/kivaplus/kivaplus-backend/internal/shared/logger"
+	"github.com/kivaplus/kivaplus-backend/internal/shared/response"
 	"github.com/kivaplus/kivaplus-backend/internal/users/ports"
 )
 
@@ -40,44 +40,17 @@ func (h *AuthHandler) Register(ctx context.Context, request events.APIGatewayPro
 	var req ports.CreateUserRequest
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		h.logger.Error("Failed to parse register request", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid request format"}`,
-		}, nil
+		return response.BadRequest("Invalid request format"), nil
 	}
 
 	user, err := h.createUserUC.Execute(ctx, req)
 	if err != nil {
 		h.logger.Error("Failed to create user", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: fmt.Sprintf(`{"error":"%s"}`, err.Error()),
-		}, nil
+		return response.BadRequest(err.Error()), nil
 	}
 
-	response := map[string]interface{}{
-		"message": "User created successfully",
-		"user": map[string]interface{}{
-			"id":     user.User.ID,
-			"email":  user.User.Email,
-			"active": user.User.Active,
-		},
-	}
-
-	responseBody, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
-		StatusCode: 201,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-		Body: string(responseBody),
-	}, nil
+	// Return the user data directly with a single message
+	return response.Created(user, "User created successfully"), nil
 }
 
 // Login handles user authentication
@@ -87,45 +60,27 @@ func (h *AuthHandler) Login(ctx context.Context, request events.APIGatewayProxyR
 	var req ports.LoginRequest
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		h.logger.Error("Failed to parse login request", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid request format"}`,
-		}, nil
+		return response.BadRequest("Invalid request format"), nil
 	}
 
 	loginResponse, err := h.loginUC.Execute(ctx, req)
 	if err != nil {
 		h.logger.Error("Failed to authenticate user", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 401,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid credentials"}`,
-		}, nil
+		return response.InvalidCredentials(), nil
 	}
 
-	response := map[string]interface{}{
+	user := map[string]interface{}{
+		"id":     loginResponse.User.ID,
+		"email":  loginResponse.User.Email,
+		"active": loginResponse.User.Active,
+	}
+
+	tokens := map[string]string{
 		"access_token":  loginResponse.AccessToken,
 		"refresh_token": loginResponse.RefreshToken,
-		"user": map[string]interface{}{
-			"id":     loginResponse.User.ID,
-			"email":  loginResponse.User.Email,
-			"active": loginResponse.User.Active,
-		},
 	}
 
-	responseBody, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-		Body: string(responseBody),
-	}, nil
+	return response.LoginSuccess(user, tokens), nil
 }
 
 // RefreshToken handles token refresh
@@ -135,38 +90,33 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, request events.APIGatewa
 	var req ports.RefreshTokenRequest
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		h.logger.Error("Failed to parse refresh token request", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid request format"}`,
-		}, nil
+		return response.BadRequest("Invalid request format"), nil
 	}
 
 	refreshResponse, err := h.refreshTokenUC.Execute(ctx, req)
 	if err != nil {
 		h.logger.Error("Failed to refresh token", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 401,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid refresh token"}`,
-		}, nil
+		return response.InvalidRefreshToken(), nil
 	}
 
-	response := map[string]interface{}{
+	tokens := map[string]string{
 		"access_token":  refreshResponse.AccessToken,
 		"refresh_token": refreshResponse.RefreshToken,
 	}
 
-	responseBody, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-		Body: string(responseBody),
-	}, nil
+	return response.OK(tokens, "Token refreshed successfully"), nil
+}
+
+// Health handles health check requests
+func (h *AuthHandler) Health(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	h.logger.Info("Processing health check request")
+
+	healthData := map[string]interface{}{
+		"status":    "healthy",
+		"service":   "kivaplus-backend",
+		"timestamp": "2025-11-04T15:40:00Z",
+		"version":   "1.0.0",
+	}
+
+	return response.OK(healthData, "Service is healthy"), nil
 }

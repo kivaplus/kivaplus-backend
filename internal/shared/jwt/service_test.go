@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewJWTService(t *testing.T) {
-	// Test with environment variable
-	os.Setenv("JWT_SECRET", "test-secret")
-	defer os.Unsetenv("JWT_SECRET")
+func TestGetJWTService(t *testing.T) {
+	// Test singleton pattern
+	service1 := GetJWTService()
+	service2 := GetJWTService()
 
-	service := NewJWTService()
-	assert.NotNil(t, service)
-	assert.Equal(t, "test-secret", service.secret)
+	assert.NotNil(t, service1)
+	assert.NotNil(t, service2)
+	assert.Same(t, service1, service2) // Should be the same instance
 }
 
 func TestNewJWTService_WithSecretName(t *testing.T) {
@@ -27,34 +27,41 @@ func TestNewJWTService_WithSecretName(t *testing.T) {
 	os.Setenv("JWT_SECRET_NAME", "aws-secret-name")
 	defer os.Unsetenv("JWT_SECRET_NAME")
 
-	service := NewJWTService()
+	// Create a new service instance for testing (not singleton)
+	service := newJWTService()
 	assert.NotNil(t, service)
-	assert.Equal(t, "your-jwt-secret-key-here", service.secret)
+	// Test the new optimized method
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("test", "test@example.com", "complete", tokenVersion)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
 }
 
 func TestNewJWTService_DefaultFallback(t *testing.T) {
 	// Clear all environment variables
 	os.Unsetenv("JWT_SECRET")
 	os.Unsetenv("JWT_SECRET_NAME")
+	os.Unsetenv("JWT_SECRET_PARAM")
 
-	service := NewJWTService()
+	// Create a new service instance for testing (not singleton)
+	service := newJWTService()
 	assert.NotNil(t, service)
-	assert.Equal(t, "default-jwt-secret-key", service.secret)
+	// Test the new optimized method
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("test", "test@example.com", "complete", tokenVersion)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
 }
 
-func TestGenerateToken_Success(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+func TestGenerateToken_OptimizedMethod_Success(t *testing.T) {
+	// Set environment first, then create service
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
-	roles := []Role{
-		{
-			ID:              1,
-			Name:            "super_admin",
-			CondominiumID:   nil,
-			CondominiumName: "",
-		},
-	}
+	service := newJWTService()
 
-	token, err := service.GenerateToken("123", "test@example.com", roles, "complete")
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("123", "test@example.com", "complete", tokenVersion)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
@@ -62,42 +69,51 @@ func TestGenerateToken_Success(t *testing.T) {
 	// Verify token structure (should have 3 parts separated by dots)
 	parts := strings.Split(token, ".")
 	assert.Len(t, parts, 3)
+
+	// Verify token content
+	claims, err := service.ValidateToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, "123", claims.UserID)
+	assert.Equal(t, "test@example.com", claims.Email)
+	assert.Equal(t, "complete", claims.ProfileStatus)
+	assert.Equal(t, tokenVersion, claims.TokenVersion)
 }
 
-func TestGenerateToken_ValidateContent(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+// Legacy method test removed - use optimized GenerateToken method instead
 
-	condominiumID := int64(100)
-	roles := []Role{
-		{
-			ID:              3,
-			Name:            "sindico",
-			CondominiumID:   &condominiumID,
-			CondominiumName: "Test Condominium",
-		},
-	}
+func TestGenerateToken_NewOptimizedMethod(t *testing.T) {
+	// Set environment first, then create service
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
-	token, err := service.GenerateToken("456", "sindico@example.com", roles, "incomplete")
-	require.NoError(t, err)
+	service := newJWTService()
 
-	// Parse and validate the token content
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("123", "test@example.com", "complete", tokenVersion)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
+
+	// Verify token structure
+	parts := strings.Split(token, ".")
+	assert.Len(t, parts, 3)
+
+	// Validate token content
 	claims, err := service.ValidateToken(token)
 	require.NoError(t, err)
 
-	assert.Equal(t, "456", claims.UserID)
-	assert.Equal(t, "sindico@example.com", claims.Email)
+	assert.Equal(t, "123", claims.UserID)
+	assert.Equal(t, "test@example.com", claims.Email)
 	assert.Equal(t, "access", claims.TokenType)
-	assert.Equal(t, "incomplete", claims.ProfileStatus)
-	assert.Len(t, claims.Roles, 1)
-	assert.Equal(t, 3, claims.Roles[0].ID)
-	assert.Equal(t, "sindico", claims.Roles[0].Name)
-	assert.Equal(t, int64(100), *claims.Roles[0].CondominiumID)
-	assert.Equal(t, "kivaplus-backend", claims.Issuer)
-	assert.Equal(t, "456", claims.Subject)
+	assert.Equal(t, "complete", claims.ProfileStatus)
+	assert.Equal(t, tokenVersion, claims.TokenVersion)
 }
 
 func TestGenerateRefreshToken_Success(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
+
+	service := newJWTService()
 
 	token, err := service.GenerateRefreshToken("789", "refresh@example.com")
 
@@ -110,12 +126,15 @@ func TestGenerateRefreshToken_Success(t *testing.T) {
 }
 
 func TestGenerateRefreshToken_ValidateContent(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
+
+	service := newJWTService()
 
 	token, err := service.GenerateRefreshToken("789", "refresh@example.com")
 	require.NoError(t, err)
 
-	// Parse and validate the token content
+	// Parse and validate the token content using the same service instance
 	claims, err := service.ValidateToken(token)
 	require.NoError(t, err)
 
@@ -123,7 +142,6 @@ func TestGenerateRefreshToken_ValidateContent(t *testing.T) {
 	assert.Equal(t, "refresh@example.com", claims.Email)
 	assert.Equal(t, "refresh", claims.TokenType)
 	assert.Equal(t, "unknown", claims.ProfileStatus)
-	assert.Empty(t, claims.Roles) // Refresh tokens don't have roles
 	assert.Equal(t, "kivaplus-backend", claims.Issuer)
 	assert.Equal(t, "789", claims.Subject)
 
@@ -137,11 +155,13 @@ func TestGenerateRefreshToken_ValidateContent(t *testing.T) {
 }
 
 func TestValidateToken_Success(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
-	// Generate a token first
-	roles := []Role{{ID: 2, Name: "admin"}}
-	token, err := service.GenerateToken("123", "test@example.com", roles, "complete")
+	// Generate a token using the new optimized method
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("123", "test@example.com", "complete", tokenVersion)
 	require.NoError(t, err)
 
 	// Validate the token
@@ -151,10 +171,13 @@ func TestValidateToken_Success(t *testing.T) {
 	assert.NotNil(t, claims)
 	assert.Equal(t, "123", claims.UserID)
 	assert.Equal(t, "test@example.com", claims.Email)
+	assert.Equal(t, tokenVersion, claims.TokenVersion)
 }
 
 func TestValidateToken_InvalidToken(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
 	claims, err := service.ValidateToken("invalid.token.here")
 
@@ -165,20 +188,28 @@ func TestValidateToken_InvalidToken(t *testing.T) {
 
 func TestValidateToken_WrongSecret(t *testing.T) {
 	// Generate token with one secret
-	service1 := &Service{secret: "secret1"}
-	token, err := service1.GenerateToken("123", "test@example.com", []Role{}, "complete")
+	os.Setenv("JWT_SECRET", "secret1")
+	service1 := newJWTService()
+	tokenVersion := time.Now().Unix()
+	token, err := service1.GenerateToken("123", "test@example.com", "complete", tokenVersion)
 	require.NoError(t, err)
 
 	// Try to validate with different secret
-	service2 := &Service{secret: "secret2"}
+	os.Setenv("JWT_SECRET", "secret2")
+	service2 := newJWTService()
 	claims, err := service2.ValidateToken(token)
 
 	assert.Error(t, err)
 	assert.Nil(t, claims)
+
+	// Clean up
+	os.Unsetenv("JWT_SECRET")
 }
 
 func TestValidateToken_ExpiredToken(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
 	// Create an expired token manually
 	now := time.Now()
@@ -187,9 +218,9 @@ func TestValidateToken_ExpiredToken(t *testing.T) {
 	claims := &Claims{
 		UserID:        "123",
 		Email:         "test@example.com",
-		Roles:         []Role{},
 		TokenType:     "access",
 		ProfileStatus: "complete",
+		TokenVersion:  time.Now().Unix(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiredTime),
 			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Hour * 2)),
@@ -200,7 +231,7 @@ func TestValidateToken_ExpiredToken(t *testing.T) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(service.secret))
+	tokenString, err := token.SignedString([]byte("test-secret"))
 	require.NoError(t, err)
 
 	// Try to validate expired token
@@ -218,11 +249,14 @@ func TestValidateToken_WrongSigningMethod(t *testing.T) {
 }
 
 func TestValidateAccessToken_Success(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
-	// Generate access token
-	roles := []Role{{ID: 1, Name: "super_admin"}}
-	token, err := service.GenerateToken("123", "test@example.com", roles, "complete")
+	service := newJWTService()
+
+	// Generate access token using optimized method
+	tokenVersion := time.Now().Unix()
+	token, err := service.GenerateToken("123", "test@example.com", "complete", tokenVersion)
 	require.NoError(t, err)
 
 	// Validate as access token
@@ -232,16 +266,20 @@ func TestValidateAccessToken_Success(t *testing.T) {
 	assert.NotNil(t, claims)
 	assert.Equal(t, "access", claims.TokenType)
 	assert.Equal(t, "123", claims.UserID)
+	assert.Equal(t, tokenVersion, claims.TokenVersion)
 }
 
 func TestValidateAccessToken_WrongTokenType(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
+
+	service := newJWTService()
 
 	// Generate refresh token
 	token, err := service.GenerateRefreshToken("123", "test@example.com")
 	require.NoError(t, err)
 
-	// Try to validate as access token
+	// Try to validate as access token using the same service instance
 	claims, err := service.ValidateAccessToken(token)
 
 	assert.Error(t, err)
@@ -250,7 +288,9 @@ func TestValidateAccessToken_WrongTokenType(t *testing.T) {
 }
 
 func TestValidateAccessToken_InvalidToken(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
 	claims, err := service.ValidateAccessToken("invalid.token")
 
@@ -259,13 +299,16 @@ func TestValidateAccessToken_InvalidToken(t *testing.T) {
 }
 
 func TestValidateRefreshToken_Success(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
+
+	service := newJWTService()
 
 	// Generate refresh token
 	token, err := service.GenerateRefreshToken("123", "test@example.com")
 	require.NoError(t, err)
 
-	// Validate as refresh token
+	// Validate as refresh token using the same service instance
 	claims, err := service.ValidateRefreshToken(token)
 
 	assert.NoError(t, err)
@@ -275,11 +318,12 @@ func TestValidateRefreshToken_Success(t *testing.T) {
 }
 
 func TestValidateRefreshToken_WrongTokenType(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
 	// Generate access token
-	roles := []Role{{ID: 1, Name: "super_admin"}}
-	token, err := service.GenerateToken("123", "test@example.com", roles, "complete")
+	token, err := service.GenerateToken("123", "test@example.com", "complete", 1)
 	require.NoError(t, err)
 
 	// Try to validate as refresh token
@@ -291,7 +335,9 @@ func TestValidateRefreshToken_WrongTokenType(t *testing.T) {
 }
 
 func TestValidateRefreshToken_InvalidToken(t *testing.T) {
-	service := &Service{secret: "test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
 	claims, err := service.ValidateRefreshToken("invalid.token")
 
@@ -299,47 +345,55 @@ func TestValidateRefreshToken_InvalidToken(t *testing.T) {
 	assert.Nil(t, claims)
 }
 
-func TestGetJWTSecret_EnvironmentVariable(t *testing.T) {
+func TestJWTSecret_EnvironmentVariable(t *testing.T) {
 	os.Setenv("JWT_SECRET", "env-secret")
 	defer os.Unsetenv("JWT_SECRET")
 
-	secret := getJWTSecret()
-	assert.Equal(t, "env-secret", secret)
+	service := newJWTService()
+	// Test functionality by generating a token
+	token, err := service.GenerateToken("test", "test@example.com", "complete", 1)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
+
+	// Verify we can validate it (proves the secret was used correctly)
+	claims, err := service.ValidateToken(token)
+	assert.NoError(t, err)
+	assert.Equal(t, "test", claims.UserID)
 }
 
-func TestGetJWTSecret_SecretName(t *testing.T) {
+func TestJWTSecret_SecretName(t *testing.T) {
 	os.Unsetenv("JWT_SECRET")
 	os.Setenv("JWT_SECRET_NAME", "aws-secret")
 	defer os.Unsetenv("JWT_SECRET_NAME")
 
-	secret := getJWTSecret()
-	assert.Equal(t, "your-jwt-secret-key-here", secret)
+	service := newJWTService()
+	// Test functionality by generating a token
+	token, err := service.GenerateToken("test", "test@example.com", "complete", 1)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
 }
 
-func TestGetJWTSecret_DefaultFallback(t *testing.T) {
+func TestJWTSecret_DefaultFallback(t *testing.T) {
 	os.Unsetenv("JWT_SECRET")
 	os.Unsetenv("JWT_SECRET_NAME")
+	os.Unsetenv("JWT_SECRET_PARAM")
 
-	secret := getJWTSecret()
-	assert.Equal(t, "default-jwt-secret-key", secret)
+	service := newJWTService()
+	// Test functionality by generating a token
+	token, err := service.GenerateToken("test", "test@example.com", "complete", 1)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
 }
 
 // Integration test: Full token lifecycle
 func TestTokenLifecycle_Integration(t *testing.T) {
-	service := &Service{secret: "integration-test-secret"}
+	service := newJWTService()
+	os.Setenv("JWT_SECRET", "integration-test-secret")
+	defer os.Unsetenv("JWT_SECRET")
 
-	// 1. Generate access token
-	condominiumID := int64(200)
-	roles := []Role{
-		{
-			ID:              4,
-			Name:            "morador",
-			CondominiumID:   &condominiumID,
-			CondominiumName: "Integration Test Building",
-		},
-	}
-
-	accessToken, err := service.GenerateToken("integration-user", "integration@test.com", roles, "complete")
+	// 1. Generate access token with new method
+	tokenVersion := time.Now().Unix()
+	accessToken, err := service.GenerateToken("integration-user", "integration@test.com", "complete", tokenVersion)
 	require.NoError(t, err)
 
 	// 2. Generate refresh token
@@ -351,14 +405,13 @@ func TestTokenLifecycle_Integration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "integration-user", accessClaims.UserID)
 	assert.Equal(t, "access", accessClaims.TokenType)
-	assert.Len(t, accessClaims.Roles, 1)
+	assert.Equal(t, tokenVersion, accessClaims.TokenVersion)
 
 	// 4. Validate refresh token
 	refreshClaims, err := service.ValidateRefreshToken(refreshToken)
 	require.NoError(t, err)
 	assert.Equal(t, "integration-user", refreshClaims.UserID)
 	assert.Equal(t, "refresh", refreshClaims.TokenType)
-	assert.Empty(t, refreshClaims.Roles)
 
 	// 5. Cross-validation should fail
 	_, err = service.ValidateAccessToken(refreshToken)

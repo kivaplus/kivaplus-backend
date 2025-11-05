@@ -79,7 +79,8 @@
             1,
             2,
             3,
-            4
+            4,
+            5
           ],
           "resource": "profile",
           "action": "read",
@@ -97,7 +98,8 @@
             1,
             2,
             3,
-            4
+            4,
+            5
           ],
           "resource": "profile",
           "action": "update",
@@ -136,7 +138,8 @@
           "public": false,
           "roles": [
             1,
-            2
+            2,
+            3
           ],
           "resource": "usuarios",
           "action": "read",
@@ -154,7 +157,8 @@
             1,
             2,
             3,
-            4
+            4,
+            5
           ],
           "resource": "usuarios",
           "action": "update",
@@ -190,13 +194,17 @@
           "path_pattern": "^/condominios$",
           "public": false,
           "roles": [
-            1
+            1,
+            2,
+            3,
+            4,
+            5
           ],
           "resource": "condominios",
           "action": "list",
           "scope": "global",
-          "lambda": "users",
-          "description": "List all condominiums"
+          "lambda": "condominiums",
+          "description": "Auto-generated route for GET /condominios"
         },
         {
           "name": "create_condominium",
@@ -205,47 +213,220 @@
           "path_pattern": "^/condominios$",
           "public": false,
           "roles": [
-            1
+            1,
+            2,
+            3,
+            4,
+            5
           ],
           "resource": "condominios",
           "action": "create",
           "scope": "global",
-          "lambda": "users",
-          "description": "Create new condominium"
+          "lambda": "condominiums",
+          "description": "Auto-generated route for POST /condominios"
         },
         {
           "name": "get_condominium",
           "method": "GET",
           "path": "/condominios/{id}",
-          "path_pattern": "^/condominios/\\d+$",
+          "path_pattern": "^/condominios/\\w+$",
           "public": false,
           "roles": [
             1,
             2,
             3,
-            4
+            4,
+            5
           ],
           "resource": "condominios",
           "action": "read",
           "scope": "condominium",
-          "lambda": "users",
-          "description": "Get specific condominium"
+          "lambda": "condominiums",
+          "description": "Auto-generated route for GET /condominios/{id}"
         },
         {
-          "name": "update_condominium",
-          "method": "PUT",
-          "path": "/condominios/{id}",
-          "path_pattern": "^/condominios/\\d+$",
+          "name": "list_units",
+          "method": "GET",
+          "path": "/condominios/{id}/units",
+          "path_pattern": "^/condominios/\\w+/units$",
           "public": false,
           "roles": [
             1,
-            2
+            2,
+            3
           ],
-          "resource": "condominios",
+          "resource": "units",
+          "action": "list",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "List units in a condominium"
+        },
+        {
+          "name": "create_unit",
+          "method": "POST",
+          "path": "/condominios/{id}/units",
+          "path_pattern": "^/condominios/\\w+/units$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "units",
+          "action": "create",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "Create a new unit in a condominium"
+        },
+        {
+          "name": "get_unit",
+          "method": "GET",
+          "path": "/condominios/{id}/units/{unit_id}",
+          "path_pattern": "^/condominios/\\w+/units/\\w+$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "resource": "units",
+          "action": "read",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "Get a specific unit"
+        },
+        {
+          "name": "update_unit",
+          "method": "PUT",
+          "path": "/condominios/{id}/units/{unit_id}",
+          "path_pattern": "^/condominios/\\w+/units/\\w+$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "units",
           "action": "update",
           "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "Update a unit"
+        },
+        {
+          "name": "delete_unit",
+          "method": "DELETE",
+          "path": "/condominios/{id}/units/{unit_id}",
+          "path_pattern": "^/condominios/\\w+/units/\\w+$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "units",
+          "action": "delete",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "Delete a unit"
+        },
+        {
+          "name": "list_vehicles",
+          "method": "GET",
+          "path": "/condominios/{id}/vehicles",
+          "path_pattern": "^/condominios/\\w+/vehicles$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "resource": "vehicles",
+          "action": "list",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "List vehicles in a condominium"
+        },
+        {
+          "name": "create_vehicle",
+          "method": "POST",
+          "path": "/condominios/{id}/vehicles",
+          "path_pattern": "^/condominios/\\w+/vehicles$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "resource": "vehicles",
+          "action": "create",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "Create a new vehicle in a condominium"
+        },
+        {
+          "name": "list_parking_spaces",
+          "method": "GET",
+          "path": "/condominios/{id}/parking-spaces",
+          "path_pattern": "^/condominios/\\w+/parking-spaces$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "parking_spaces",
+          "action": "list",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "List parking spaces in a condominium"
+        },
+        {
+          "name": "list_residents",
+          "method": "GET",
+          "path": "/condominios/{id}/residents",
+          "path_pattern": "^/condominios/\\w+/residents$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3
+          ],
+          "resource": "residents",
+          "action": "list",
+          "scope": "condominium",
+          "lambda": "condominiums",
+          "description": "List residents in a condominium"
+        }
+      ]
+    },
+    {
+      "name": "dashboard",
+      "description": "Auto-generated group for dashboard",
+      "routes": [
+        {
+          "name": "dashboard",
+          "method": "GET",
+          "path": "/dashboard",
+          "path_pattern": "^/dashboard$",
+          "public": false,
+          "roles": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "resource": "dashboard",
+          "action": "read",
+          "scope": "own",
           "lambda": "users",
-          "description": "Update condominium"
+          "description": "Auto-generated route for GET /dashboard"
         }
       ]
     }

@@ -111,6 +111,20 @@ func (r *RolePostgresRepository) RemoveUserRole(ctx context.Context, userID int6
 	return nil
 }
 
+// RemoveUserRoleWithoutCondominium remove um papel de um usuário que não tem condominium_id (NULL)
+func (r *RolePostgresRepository) RemoveUserRoleWithoutCondominium(ctx context.Context, userID int64, roleID int) error {
+	query := `
+		DELETE FROM users_role
+		WHERE users_id = $1 AND role_id = $2 AND condominium_id IS NULL`
+
+	_, err := r.db.DB.ExecContext(ctx, query, userID, roleID)
+	if err != nil {
+		return fmt.Errorf("failed to remove user role without condominium: %w", err)
+	}
+
+	return nil
+}
+
 // GetUserRolesInCondominio retorna os papéis de um usuário em um condomínio específico
 func (r *RolePostgresRepository) GetUserRolesInCondominium(ctx context.Context, userID int64, condominiumID int64) ([]jwt.Role, error) {
 	query := `
@@ -157,4 +171,26 @@ func (r *RolePostgresRepository) GetUserRolesInCondominium(ctx context.Context, 
 	}
 
 	return roles, nil
+}
+
+// GetUsersByRole retrieves all users with a specific role (for security validation)
+func (r *RolePostgresRepository) GetUsersByRole(ctx context.Context, roleID int) ([]int64, error) {
+	query := `SELECT users_id FROM users_role WHERE role_id = $1 AND condominium_id IS NULL`
+
+	rows, err := r.db.DB.QueryContext(ctx, query, roleID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query users with role: %w", err)
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan user ID: %w", err)
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	return userIDs, nil
 }

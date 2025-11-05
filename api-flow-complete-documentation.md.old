@@ -1,0 +1,640 @@
+# KivaPlus API Complete Flow Documentation
+## From Registration to Condominium Access with Detailed Permission Analysis
+
+### **🔍 Route Configuration Validation**
+
+**✅ VALIDATION RESULT**: The `internal/shared/routes/default.go` file **DOES NOT EXIST** and is **NOT NECESSARY**.
+
+**Current Architecture**:
+- ✅ `configs/routes.json` - Central route configuration with permissions
+- ✅ Route handlers in respective modules (auth, users, condominiums)
+- ✅ Permission system via `internal/shared/permissions/`
+- ❌ `internal/shared/routes/default.go` - **NOT FOUND** (can be safely ignored)
+
+**Conclusion**: The system correctly uses JSON-based configuration without redundant Go files.
+
+---
+
+## 🔄 **COMPLETE API FLOW FLOWCHART**
+
+```mermaid
+flowchart TD
+    Start([🚀 User Journey Starts]) --> Register[📝 POST /register]
+
+    %% Registration Flow
+    Register --> RegValidation{Request Valid?}
+    RegValidation -->|❌ No| RegError[❌ 400: Validation Error]
+    RegValidation -->|✅ Yes| RegProcess[🔄 Create User Account]
+    RegProcess --> RegSuccess[✅ 201: User Created<br/>🎯 Role: sindico (ID: 3)<br/>📊 Profile: incomplete]
+
+    %% Login Flow
+    RegSuccess --> Login[🔐 POST /login]
+    Login --> LoginValidation{Credentials Valid?}
+    LoginValidation -->|❌ No| LoginError[❌ 401: Invalid Credentials]
+    LoginValidation -->|✅ Yes| LoginProcess[🔄 Generate JWT Tokens]
+    LoginProcess --> LoginSuccess[✅ 200: JWT Tokens<br/>🎫 Access Token (1h)<br/>🎫 Refresh Token (30d)]
+
+    %% Profile Check
+    LoginSuccess --> ProfileCheck{Profile Complete?}
+    ProfileCheck -->|❌ No| ProfileIncomplete[⚠️ Profile Incomplete<br/>🔒 Limited Access]
+    ProfileCheck -->|✅ Yes| FullAccess[✅ Full API Access]
+
+    %% Profile Completion Flow
+    ProfileIncomplete --> GetProfile[👤 GET /profile]
+    GetProfile --> ProfileData[📋 Show Profile Data<br/>🔍 Status: incomplete]
+    ProfileData --> CompleteProfile[👤 PUT /profile]
+    CompleteProfile --> ProfileValidation{Profile Data Valid?}
+    ProfileValidation -->|❌ No| ProfileError[❌ 422: Validation Error]
+    ProfileValidation -->|✅ Yes| ProfileUpdate[🔄 Update Profile + New JWT]
+    ProfileUpdate --> ProfileSuccess[✅ 200: Profile Complete<br/>🎫 New JWT Tokens<br/>📊 Status: complete]
+
+    %% Full Access Routes
+    ProfileSuccess --> FullAccess
+    FullAccess --> CreateCondo[🏢 POST /condominios]
+    CreateCondo --> CondoValidation{Has Permission?}
+    CondoValidation -->|❌ No| CondoError[❌ 403: Forbidden]
+    CondoValidation -->|✅ Yes| CondoProcess[🔄 Create Condominium<br/>🎯 Assign Sindico Role]
+    CondoProcess --> CondoSuccess[✅ 201: Condominium Created<br/>🎫 New JWT with Sindico Role<br/>🏢 User becomes Sindico]
+
+    %% List and Access Condominiums
+    CondoSuccess --> ListCondos[📋 GET /condominios]
+    ListCondos --> CondoList[📊 List User's Condominiums<br/>🔍 Filtered by User Roles]
+    CondoList --> GetCondo[🏢 GET /condominios/{id}]
+    GetCondo --> CondoAccessCheck{Has Condominium Access?}
+    CondoAccessCheck -->|❌ No| CondoAccessError[❌ 403: No Access to Condominium]
+    CondoAccessCheck -->|✅ Yes| CondoDetails[✅ 200: Condominium Details<br/>📊 Full Condominium Data<br/>🔑 User Permissions in Context]
+
+    %% Error Recovery Flows
+    RegError --> Register
+    LoginError --> Login
+    ProfileError --> CompleteProfile
+    CondoError --> End([❌ Access Denied])
+    CondoAccessError --> End
+    CondoDetails --> End([✅ Complete Flow])
+
+    %% Refresh Token Flow (Parallel)
+    LoginSuccess --> RefreshFlow[🔄 POST /token/refresh]
+    RefreshFlow --> RefreshValidation{Refresh Token Valid?}
+    RefreshValidation -->|❌ No| RefreshError[❌ 401: Invalid Refresh Token]
+    RefreshValidation -->|✅ Yes| RefreshSuccess[✅ 200: New Access Token<br/>🎫 Updated JWT<br/>🔄 Fresh Permissions]
+    RefreshError --> Login
+    RefreshSuccess --> FullAccess
+```
+
+---
+
+## 📋 **DETAILED API ENDPOINTS WITH PERMISSION ANALYSIS**
+
+### **1. 📝 POST /register**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🟢 **PUBLIC** (No authentication required)
+- **Role Requirements**: None
+- **Permission Check**: None
+- **Why Enabled**: Registration must be accessible to anonymous users
+- **Security**: Rate limiting and validation only
+
+**Request Payload:**
+```json
+{
+  "name": "João Silva",
+  "email": "joao.silva@email.com",
+  "password": "MinhaSenh@123!",
+  "confirm_password": "MinhaSenh@123!",
+  "marital_status": "solteiro"
+}
+```
+
+**Response (201 Success):**
+```json
+{
+  "success": true,
+  "message": "User created successfully",
+  "data": {
+    "user_id": 1,
+    "email": "joao.silva@email.com",
+    "profile_status": "incomplete"
+  }
+}
+```
+
+**🎯 Role Assignment**: User automatically gets `sindico` role (ID: 3)
+
+---
+
+### **2. 🔐 POST /login**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🟢 **PUBLIC** (No authentication required)
+- **Role Requirements**: None
+- **Permission Check**: Credential validation only
+- **Why Enabled**: Authentication endpoint must be public
+- **Security**: Credential validation, account status check
+
+**Request Payload:**
+```json
+{
+  "email": "joao.silva@email.com",
+  "password": "MinhaSenh@123!"
+}
+```
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "id": 1,
+      "email": "joao.silva@email.com",
+      "active": true
+    },
+    "tokens": {
+      "access_token": "eyJhbGciOiJIUzI1NiIs...",
+      "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+      "expires_in": 3600
+    }
+  }
+}
+```
+
+**🎫 JWT Claims Generated:**
+- `user_id`: User identifier
+- `email`: User email
+- `token_type`: "access"
+- `profile_status`: "incomplete" or "complete"
+- `token_version`: For cache invalidation
+
+---
+
+### **3. 🔄 POST /token/refresh**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🟡 **SEMI-PROTECTED** (Requires valid refresh token)
+- **Role Requirements**: None (token-based)
+- **Permission Check**: Refresh token validation
+- **Why Enabled**: Token refresh must work with refresh tokens only
+- **Security**: Refresh token validation, user status check
+
+**Request Payload:**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Token refreshed successfully",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIs...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+    "expires_in": 3600
+  }
+}
+```
+
+**🔄 Permission Refresh**: New tokens reflect current user roles and profile status
+
+---
+
+### **4. 👤 GET /profile**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🔴 **PROTECTED** (Requires JWT authentication)
+- **Role Requirements**: Any authenticated role (1,2,3,4,5)
+- **Permission Check**: `profile:read:own`
+- **Why Enabled**: Any authenticated user can view their own profile
+- **Security**: JWT validation, user can only access own profile
+
+**Request**: No payload (JWT in Authorization header)
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Profile retrieved successfully",
+  "data": {
+    "user": {
+      "id": 1,
+      "email": "joao.silva@email.com",
+      "profile_status": "complete"
+    },
+    "profile": {
+      "name": "João Silva Santos",
+      "phone": "+5511999999999",
+      "document_type": "CPF",
+      "document": "12345678901",
+      "birth_date": "1990-05-15"
+    },
+    "address": {
+      "street": "Rua das Flores, 123",
+      "neighborhood": "Centro",
+      "city": "São Paulo",
+      "state": "SP",
+      "zip_code": "01234-567"
+    },
+    "roles": [
+      {
+        "id": 3,
+        "name": "sindico",
+        "condominium_id": null,
+        "condominium_name": null
+      }
+    ]
+  }
+}
+```
+
+---
+
+### **5. 👤 PUT /profile**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🔴 **PROTECTED** (Requires JWT authentication)
+- **Role Requirements**: Any authenticated role (1,2,3,4,5)
+- **Permission Check**: `profile:update:own`
+- **Why Enabled**: Any authenticated user can update their own profile
+- **Security**: JWT validation, profile completion validation, new JWT issued
+
+**Request Payload:**
+```json
+{
+  "name": "João Silva Santos",
+  "email": "joao.silva@email.com",
+  "phone": "+5511999999999",
+  "document_type": "CPF",
+  "document": "12345678901",
+  "birth_date": "1990-05-15",
+  "address": {
+    "street": "Rua das Flores, 123",
+    "neighborhood": "Centro",
+    "city": "São Paulo",
+    "state": "SP",
+    "zip_code": "01234-567"
+  }
+}
+```
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Profile completed successfully",
+  "data": {
+    "profile": {
+      "id": 1,
+      "name": "João Silva Santos",
+      "email": "joao.silva@email.com",
+      "phone": "+5511999999999",
+      "document_type": "CPF",
+      "document": "12345678901",
+      "profile_status": "complete"
+    },
+    "tokens": {
+      "access_token": "eyJhbGciOiJIUzI1NiIs...",
+      "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+    }
+  }
+}
+```
+
+**🎫 Token Update**: New JWT issued with `profile_status: "complete"`
+
+---
+
+### **6. 🏢 POST /condominios**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🔴 **PROTECTED** (Requires JWT + Complete Profile)
+- **Role Requirements**: Any role with complete profile (1,2,3,4,5)
+- **Permission Check**: `condominios:create:global` + Complete Profile Required
+- **Why Enabled**: Users with complete profiles can create condominiums
+- **Security**: JWT validation, profile completion check, sindico role assignment
+- **Special**: User cannot already be sindico of another condominium
+
+**Request Payload:**
+```json
+{
+  "name": "Residencial Jardim das Flores",
+  "cnpj": "12345678000199",
+  "address": {
+    "street": "Av. Principal, 1000",
+    "neighborhood": "Jardim das Flores",
+    "city": "São Paulo",
+    "state": "SP",
+    "zip_code": "04567-890"
+  },
+  "total_units": 120,
+  "admin_fee_percentage": 0.05
+}
+```
+
+**Response (201 Success):**
+```json
+{
+  "success": true,
+  "message": "Condominium created successfully",
+  "data": {
+    "condominium": {
+      "id": 1,
+      "name": "Residencial Jardim das Flores",
+      "cnpj": "12345678000199",
+      "total_units": 120,
+      "admin_fee_percentage": 0.05,
+      "status": "active",
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    "tokens": {
+      "access_token": "eyJhbGciOiJIUzI1NiIs...",
+      "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+    }
+  }
+}
+```
+
+**🎯 Role Assignment**:
+- Removes general `sindico` role (ID: 3) without condominium
+- Adds `sindico` role (ID: 3) for the specific condominium
+- Adds `admin` role (ID: 2) for the specific condominium
+**🎫 Token Update**: New JWT issued with updated roles
+
+---
+
+### **7. 📋 GET /condominios**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🔴 **PROTECTED** (Requires JWT authentication)
+- **Role Requirements**: Any authenticated role (1,2,3,4,5)
+- **Permission Check**: `condominios:list:global`
+- **Why Enabled**: Any authenticated user can list condominiums they have access to
+- **Security**: JWT validation, results filtered by user roles
+- **Filtering Logic**:
+  - `super_admin` (1): Sees all condominiums
+  - `admin` (2): Sees condominiums based on their permissions
+  - `sindico` (3): Sees condominiums they manage
+  - `morador` (4): Sees condominiums they belong to
+  - Others: Sees condominiums based on their roles
+
+**Request**: No payload (JWT in Authorization header)
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Condominiums retrieved successfully",
+  "data": {
+    "condominiums": [
+      {
+        "id": 1,
+        "name": "Residencial Jardim das Flores",
+        "cnpj": "12345678000199",
+        "total_units": 120,
+        "user_role": "sindico",
+        "status": "active"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+---
+
+### **8. 🏢 GET /condominios/{id}**
+
+**🔒 PERMISSION ANALYSIS:**
+- **Access Level**: 🔴 **PROTECTED** (Requires JWT + Condominium Access)
+- **Role Requirements**: Must have role in the specific condominium OR be super_admin
+- **Permission Check**: `condominios:read:condominium` + Condominium Access Validation
+- **Why Enabled/Disabled**:
+  - ✅ **ENABLED** if: User has role in condominium OR is super_admin
+  - ❌ **DISABLED** if: User has no role in the requested condominium
+- **Security**: JWT validation, condominium-specific access control
+- **Access Logic**:
+  - `super_admin` (1): Can access any condominium
+  - `admin` (2): Can access condominiums based on their permissions
+  - `sindico` (3): Can access condominiums they manage
+  - `morador` (4): Can access condominiums they belong to
+  - Others: Based on their specific roles in the condominium
+
+**Request**: No payload (JWT in Authorization header, condominium ID in URL)
+
+**Response (200 Success):**
+```json
+{
+  "success": true,
+  "message": "Condominium retrieved successfully",
+  "data": {
+    "condominium": {
+      "id": 1,
+      "name": "Residencial Jardim das Flores",
+      "cnpj": "12345678000199",
+      "address": {
+        "street": "Av. Principal, 1000",
+        "neighborhood": "Jardim das Flores",
+        "city": "São Paulo",
+        "state": "SP",
+        "zip_code": "04567-890"
+      },
+      "total_units": 120,
+      "admin_fee_percentage": 0.05,
+      "status": "active",
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    },
+    "user_role": "sindico",
+    "permissions": {
+      "condominiums": {"read": true, "update": true},
+      "units": {"create": true, "read": true, "update": true, "delete": true},
+      "residents": {"create": true, "read": true, "update": true, "delete": true},
+      "employees": {"create": true, "read": true, "update": true, "delete": true},
+      "vehicles": {"create": true, "read": true, "update": true, "delete": true},
+      "contracts": {"create": true, "read": true, "update": true, "delete": true},
+      "companies": {"read": true},
+      "services": {"read": true}
+    }
+  }
+}
+```
+
+**Response (403 Forbidden - No Access):**
+```json
+{
+  "success": false,
+  "message": "Insufficient permissions",
+  "error": {
+    "code": "INSUFFICIENT_PERMISSIONS",
+    "details": "condominium access required"
+  }
+}
+```
+
+---
+
+## 🔐 **PERMISSION SYSTEM DEEP DIVE**
+
+### **Role Hierarchy & IDs:**
+1. **`super_admin`** (ID: 1) - Global administrator, access to everything
+2. **`admin`** (ID: 2) - Administrative role (context-dependent)
+3. **`sindico`** (ID: 3) - Condominium manager, manages specific condominiums (default role for new users)
+4. **`morador`** (ID: 4) - Resident, belongs to condominiums
+5. **`funcionario`** (ID: 5) - Employee role (context-dependent)
+
+### **📋 ACTUAL CONFIGURED PERMISSIONS BY ROLE:**
+
+#### **1. 👑 Super Admin (ID: 1)**
+```json
+{
+  "all": true
+}
+```
+**Access**: Complete system access, bypasses all resource checks
+
+#### **2. 🛠️ Administrator (ID: 2)**
+```json
+{
+  "condominiums": {"read": true, "update": true},
+  "units": {"create": true, "read": true, "update": true, "delete": true},
+  "residents": {"create": true, "read": true, "update": true, "delete": true},
+  "employees": {"create": true, "read": true, "update": true, "delete": true},
+  "vehicles": {"create": true, "read": true, "update": true, "delete": true},
+  "contracts": {"create": true, "read": true, "update": true, "delete": true},
+  "companies": {"create": true, "read": true, "update": true, "delete": true},
+  "services": {"create": true, "read": true, "update": true, "delete": true}
+}
+```
+
+#### **3. 🏢 Sindico (ID: 3) - Default Role**
+```json
+{
+  "condominiums": {"read": true, "update": true},
+  "units": {"create": true, "read": true, "update": true, "delete": true},
+  "residents": {"create": true, "read": true, "update": true, "delete": true},
+  "employees": {"create": true, "read": true, "update": true, "delete": true},
+  "vehicles": {"create": true, "read": true, "update": true, "delete": true},
+  "contracts": {"create": true, "read": true, "update": true, "delete": true},
+  "companies": {"read": true},
+  "services": {"read": true}
+}
+```
+
+#### **4. 🏠 Morador (ID: 4)**
+```json
+{
+  "units": {"read": true},
+  "residents": {"read": true},
+  "vehicles": {"create": true, "read": true, "update": true}
+}
+```
+
+#### **5. 👷 Funcionario (ID: 5)**
+```json
+{
+  "residents": {"read": true},
+  "vehicles": {"read": true}
+}
+```
+
+### **🎯 RESOURCES & ACTIONS AVAILABLE:**
+
+**Resources:**
+- `profile` - User profile management
+- `usuarios` - User management (Portuguese API)
+- `condominios` - Condominium management (Portuguese API)
+- `condominiums` - Condominium management (English domain)
+- `units` - Unit management
+- `residents` - Resident management
+- `employees` - Employee management
+- `vehicles` - Vehicle management
+- `contracts` - Contract management
+- `companies` - Company management
+- `services` - Service management
+- `parking_spaces` - Parking space management
+- `dashboard` - Dashboard access
+
+**Actions:**
+- `create` - Create new resources
+- `read` - View/read resources
+- `update` - Modify existing resources
+- `delete` - Remove resources
+- `list` - List multiple resources
+
+**Scopes:**
+- `global` - System-wide access
+- `condominium` - Condominium-specific access
+- `own` - User's own data only
+
+### **🔧 GRANULAR PERMISSIONS SYSTEM:**
+
+Your system supports both **JSONB permissions** (shown above) and **granular permissions** via the `permissions` table for custom roles:
+
+**Example Custom Role: `custom_manager`**
+```sql
+INSERT INTO permissions (role_id, resource, action, allowed, scope) VALUES
+((SELECT id FROM role WHERE name = 'custom_manager'), 'condominiums', 'read', true, 'global'),
+((SELECT id FROM role WHERE name = 'custom_manager'), 'condominiums', 'update', true, 'condominium'),
+((SELECT id FROM role WHERE name = 'custom_manager'), 'employees', 'create', true, 'condominium'),
+((SELECT id FROM role WHERE name = 'custom_manager'), 'vehicles', 'read', true, 'global');
+```
+
+### **Permission Validation Flow:**
+```mermaid
+flowchart TD
+    Request[📨 API Request] --> JWT{Valid JWT?}
+    JWT -->|❌ No| Unauthorized[❌ 401 Unauthorized]
+    JWT -->|✅ Yes| ExtractClaims[📋 Extract User Claims]
+    ExtractClaims --> CheckRoute{Route Requires Permission?}
+    CheckRoute -->|❌ No| Allow[✅ Allow Access]
+    CheckRoute -->|✅ Yes| LoadRoles[🔍 Load User Roles from DB]
+    LoadRoles --> CheckPermission{Has Required Permission?}
+    CheckPermission -->|❌ No| Forbidden[❌ 403 Forbidden]
+    CheckPermission -->|✅ Yes| CheckContext{Context-Specific Check?}
+    CheckContext -->|❌ No| Allow
+    CheckContext -->|✅ Yes| ValidateContext{Valid Context Access?}
+    ValidateContext -->|❌ No| Forbidden
+    ValidateContext -->|✅ Yes| Allow
+```
+
+### **Permission Scopes:**
+- **`global`**: System-wide permissions (super_admin)
+- **`condominium`**: Condominium-specific permissions (sindico, morador in that condominium)
+- **`own`**: User's own data only (profile, own records)
+
+### **Enhanced Permission Checker Features:**
+- **Token Version Validation**: Lazy invalidation for role changes
+- **Redis Caching**: Cached permission lookups for performance
+- **Context-Aware**: Condominium-specific access control
+- **Profile Completion**: Some actions require complete profiles
+
+---
+
+## 🎯 **KEY SECURITY FEATURES**
+
+1. **JWT Token Validation** - All protected routes validate JWT tokens
+2. **Role-Based Access Control** - Permissions based on user roles in specific contexts
+3. **Context-Aware Permissions** - Condominium-specific access control
+4. **Profile Completion Checks** - Critical actions require complete profiles
+5. **Dynamic Role Assignment** - Roles updated when creating/joining condominiums
+6. **Token Versioning** - Lazy invalidation for permission changes
+7. **Redis Caching** - Performance optimization with cache invalidation
+8. **Scope-Based Security** - Global, condominium, and own-data scopes
+
+---
+
+## 📊 **ROUTE CONFIGURATION SUMMARY**
+
+**✅ Current Architecture is Optimal:**
+- `configs/routes.json` - Central configuration with permissions
+- Handler-based routing in respective modules
+- Enhanced permission system with caching
+- **No redundant `default.go` file needed**
+
+**🗂️ Files That Can Be Safely Ignored:**
+- `internal/shared/routes/default.go` - **DOES NOT EXIST**
+- Any references to this file in documentation can be removed
+
+This comprehensive flow ensures secure, role-based access to all API endpoints with clear permission boundaries and proper user journey progression from registration to full condominium management access.

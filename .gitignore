@@ -5,6 +5,7 @@
 *.so
 *.dylib
 migrate
+docs
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,8 +24,8 @@ coverage.html
 
 dist
 scripts
-cmd
-lambda/run-migrations/
+cmd/run-migrations/bootstrap
+cmd/run-migrations/migrations.zip
 
 # OS
 .DS_Store

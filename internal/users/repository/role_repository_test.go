@@ -36,7 +36,7 @@ func TestRoleRepository_GetUserRoles(t *testing.T) {
 		// This test requires a user to exist, so we'll use a known user ID
 		// In a real test, you'd create a test user first
 		userID := int64(1)
-		roleID := 3 // Sindico role
+		roleID := 3 // Sindico role (default)
 
 		// Add role to user
 		err := repo.AddUserRole(ctx, userID, roleID, nil)

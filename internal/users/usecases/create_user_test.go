@@ -55,7 +55,6 @@ func TestCreateUser_Success(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.NotNil(t, result.User)
 	assert.NotNil(t, result.Person)
-	assert.Equal(t, "User created successfully.", result.Message)
 	assert.Equal(t, req.Email, result.User.Email)
 	assert.Equal(t, req.Name, result.Person.Name)
 
@@ -341,7 +340,6 @@ func TestCreateUser_RealisticScenario(t *testing.T) {
 	assert.Equal(t, req.Name, result.Person.Name)
 	assert.True(t, result.User.Active)
 	assert.NotEmpty(t, result.User.PasswordHash)
-	assert.Equal(t, "User created successfully.", result.Message)
 
 	// Verify all mocks were called with expected parameters
 	mockUserRepo.AssertExpectations(t)

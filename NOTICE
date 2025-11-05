@@ -1,0 +1,28 @@
+KivaPlus Backend
+Copyright 2024 KivaPlus
+
+This product includes software developed by KivaPlus (https://github.com/kivaplus).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This software includes the following third-party components:
+
+- Go programming language (https://golang.org/) - BSD-style license
+- PostgreSQL driver (github.com/lib/pq) - MIT license
+- JWT library (github.com/golang-jwt/jwt) - MIT license
+- AWS Lambda Go (github.com/aws/aws-lambda-go) - Apache 2.0 license
+- Testify (github.com/stretchr/testify) - MIT license
+- Docker (https://www.docker.com/) - Apache 2.0 license
+- LocalStack (https://localstack.cloud/) - Apache 2.0 license
+
+For a complete list of dependencies and their licenses, see go.mod and go.sum files.

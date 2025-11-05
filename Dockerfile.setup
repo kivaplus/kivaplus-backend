@@ -1,0 +1,370 @@
+# LocalStack Setup Dockerfile
+# Sets up AWS resources in LocalStack
+
+FROM alpine:latest
+
+# Install required packages
+RUN apk add --no-cache \
+    bash \
+    curl \
+    aws-cli \
+    jq
+
+# Set working directory
+WORKDIR /opt
+
+# Copy deployment packages and scripts
+COPY dist/ /opt/code/dist/
+COPY scripts/ /opt/scripts/
+
+# Create comprehensive setup script
+RUN cat > setup-complete-infrastructure.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "🏗️  Setting up complete LocalStack infrastructure..."
+
+# Configure AWS CLI for LocalStack
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localstack:4566
+
+# Wait for LocalStack to be ready
+echo "⏳ Waiting for LocalStack..."
+until curl -f http://localstack:4566/_localstack/health; do
+    echo "LocalStack is unavailable - sleeping"
+    sleep 5
+done
+echo "✅ LocalStack is ready"
+
+# Create secrets
+echo "🔐 Creating secrets..."
+aws secretsmanager create-secret \
+    --name "kivaplus/jwt-secret" \
+    --description "JWT signing secret for KivaPlus" \
+    --secret-string "localstack-jwt-secret-key" \
+    --endpoint-url http://localstack:4566 || echo "JWT secret already exists"
+
+aws secretsmanager create-secret \
+    --name "kivaplus/db-credentials" \
+    --description "Database credentials for KivaPlus" \
+    --secret-string '{"username":"kivaplus","password":"kivaplus123","host":"postgres","port":"5432","dbname":"kivaplus_local"}' \
+    --endpoint-url http://localstack:4566 || echo "DB secret already exists"
+
+# Create S3 bucket
+echo "📦 Creating S3 bucket..."
+aws s3 mb s3://kivaplus-lambda-deployments \
+    --endpoint-url http://localstack:4566 || echo "Bucket already exists"
+
+# Upload Lambda packages
+echo "📤 Uploading Lambda packages..."
+if [ -d "/opt/code/dist" ]; then
+    for zip_file in /opt/code/dist/*.zip; do
+        if [ -f "$zip_file" ]; then
+            filename=$(basename "$zip_file")
+            aws s3 cp "$zip_file" "s3://kivaplus-lambda-deployments/$filename" \
+                --endpoint-url http://localstack:4566
+            echo "Uploaded $filename"
+        fi
+    done
+fi
+
+# Create IAM roles
+echo "👤 Creating IAM roles..."
+
+# Lambda execution role
+aws iam create-role \
+    --role-name kivaplus-lambda-role \
+    --assume-role-policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+        ]
+    }' \
+    --endpoint-url http://localstack:4566 || echo "Lambda role already exists"
+
+# Attach policies to Lambda role
+aws iam attach-role-policy \
+    --role-name kivaplus-lambda-role \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole \
+    --endpoint-url http://localstack:4566 || echo "Basic execution policy already attached"
+
+# Create custom policy for secrets access
+aws iam create-policy \
+    --policy-name kivaplus-secrets-policy \
+    --policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:DescribeSecret"
+                ],
+                "Resource": "*"
+            }
+        ]
+    }' \
+    --endpoint-url http://localstack:4566 || echo "Secrets policy already exists"
+
+aws iam attach-role-policy \
+    --role-name kivaplus-lambda-role \
+    --policy-arn arn:aws:iam::000000000000:policy/kivaplus-secrets-policy \
+    --endpoint-url http://localstack:4566 || echo "Secrets policy already attached"
+
+# Create Lambda functions
+echo "🚀 Creating Lambda functions..."
+
+# Authorizer Lambda
+if [ -f "/opt/code/dist/authorizer.zip" ]; then
+    aws lambda create-function \
+        --function-name kivaplus-authorizer \
+        --runtime go1.x \
+        --role arn:aws:iam::000000000000:role/kivaplus-lambda-role \
+        --handler authorizer \
+        --zip-file fileb:///opt/code/dist/authorizer.zip \
+        --timeout 30 \
+        --memory-size 256 \
+        --environment Variables='{
+            "JWT_SECRET_NAME":"kivaplus/jwt-secret",
+            "AWS_ENDPOINT_URL":"http://localstack:4566",
+            "AWS_REGION":"us-east-1"
+        }' \
+        --endpoint-url http://localstack:4566 || echo "Authorizer Lambda already exists"
+fi
+
+# Users Lambda
+if [ -f "/opt/code/dist/users.zip" ]; then
+    aws lambda create-function \
+        --function-name kivaplus-users \
+        --runtime go1.x \
+        --role arn:aws:iam::000000000000:role/kivaplus-lambda-role \
+        --handler users \
+        --zip-file fileb:///opt/code/dist/users.zip \
+        --timeout 30 \
+        --memory-size 512 \
+        --environment Variables='{
+            "JWT_SECRET_NAME":"kivaplus/jwt-secret",
+            "DB_SECRET_NAME":"kivaplus/db-credentials",
+            "REDIS_URL":"redis://:kivaplus123@redis:6379",
+            "AWS_ENDPOINT_URL":"http://localstack:4566",
+            "AWS_REGION":"us-east-1"
+        }' \
+        --endpoint-url http://localstack:4566 || echo "Users Lambda already exists"
+fi
+
+# Condominiums Lambda
+if [ -f "/opt/code/dist/condominiums.zip" ]; then
+    aws lambda create-function \
+        --function-name kivaplus-condominiums \
+        --runtime go1.x \
+        --role arn:aws:iam::000000000000:role/kivaplus-lambda-role \
+        --handler condominiums \
+        --zip-file fileb:///opt/code/dist/condominiums.zip \
+        --timeout 30 \
+        --memory-size 512 \
+        --environment Variables='{
+            "JWT_SECRET_NAME":"kivaplus/jwt-secret",
+            "DB_SECRET_NAME":"kivaplus/db-credentials",
+            "REDIS_URL":"redis://:kivaplus123@redis:6379",
+            "AWS_ENDPOINT_URL":"http://localstack:4566",
+            "AWS_REGION":"us-east-1"
+        }' \
+        --endpoint-url http://localstack:4566 || echo "Condominiums Lambda already exists"
+fi
+
+# Create API Gateway
+echo "🌐 Creating API Gateway..."
+API_ID=$(aws apigateway create-rest-api \
+    --name kivaplus-api \
+    --description "KivaPlus Backend API for LocalStack" \
+    --endpoint-configuration types=REGIONAL \
+    --endpoint-url http://localstack:4566 \
+    --query 'id' --output text 2>/dev/null || echo "")
+
+if [ -z "$API_ID" ]; then
+    echo "⚠️  Failed to create API Gateway, using default ID"
+    API_ID="test-api"
+fi
+
+echo "API Gateway ID: $API_ID"
+
+# Get root resource ID
+ROOT_ID=$(aws apigateway get-resources \
+    --rest-api-id $API_ID \
+    --endpoint-url http://localstack:4566 \
+    --query 'items[?path==`/`].id' --output text)
+
+echo "Root resource ID: $ROOT_ID"
+
+# Create authorizer
+echo "🔐 Creating API Gateway authorizer..."
+AUTHORIZER_ID=$(aws apigateway create-authorizer \
+    --rest-api-id $API_ID \
+    --name kivaplus-authorizer \
+    --type REQUEST \
+    --authorizer-uri "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:kivaplus-authorizer/invocations" \
+    --identity-source method.request.header.Authorization \
+    --authorizer-result-ttl-in-seconds 300 \
+    --endpoint-url http://localstack:4566 \
+    --query 'id' --output text 2>/dev/null || echo "")
+
+echo "Authorizer ID: $AUTHORIZER_ID"
+
+# Create resources and methods
+echo "📍 Creating API resources and methods..."
+
+# Helper function to create resource
+create_resource() {
+    local parent_id=$1
+    local path_part=$2
+
+    aws apigateway create-resource \
+        --rest-api-id $API_ID \
+        --parent-id $parent_id \
+        --path-part $path_part \
+        --endpoint-url http://localstack:4566 \
+        --query 'id' --output text 2>/dev/null || echo ""
+}
+
+# Helper function to create method
+create_method() {
+    local resource_id=$1
+    local http_method=$2
+    local lambda_function=$3
+    local use_authorizer=$4
+
+    # Create method
+    local auth_type="NONE"
+    local authorizer_param=""
+
+    if [ "$use_authorizer" = "true" ] && [ -n "$AUTHORIZER_ID" ]; then
+        auth_type="CUSTOM"
+        authorizer_param="--authorizer-id $AUTHORIZER_ID"
+    fi
+
+    aws apigateway put-method \
+        --rest-api-id $API_ID \
+        --resource-id $resource_id \
+        --http-method $http_method \
+        --authorization-type $auth_type \
+        $authorizer_param \
+        --endpoint-url http://localstack:4566 || echo "Method already exists"
+
+    # Create integration
+    aws apigateway put-integration \
+        --rest-api-id $API_ID \
+        --resource-id $resource_id \
+        --http-method $http_method \
+        --type AWS_PROXY \
+        --integration-http-method POST \
+        --uri "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:$lambda_function/invocations" \
+        --endpoint-url http://localstack:4566 || echo "Integration already exists"
+}
+
+# Create public routes (no authorization)
+echo "Creating public routes..."
+
+# /register
+REGISTER_ID=$(create_resource $ROOT_ID "register")
+if [ -n "$REGISTER_ID" ]; then
+    create_method $REGISTER_ID "POST" "kivaplus-users" "false"
+fi
+
+# /login
+LOGIN_ID=$(create_resource $ROOT_ID "login")
+if [ -n "$LOGIN_ID" ]; then
+    create_method $LOGIN_ID "POST" "kivaplus-users" "false"
+fi
+
+# /token
+TOKEN_ID=$(create_resource $ROOT_ID "token")
+if [ -n "$TOKEN_ID" ]; then
+    # /token/refresh
+    REFRESH_ID=$(create_resource $TOKEN_ID "refresh")
+    if [ -n "$REFRESH_ID" ]; then
+        create_method $REFRESH_ID "POST" "kivaplus-users" "false"
+    fi
+fi
+
+# Create protected routes (with authorization)
+echo "Creating protected routes..."
+
+# /profile
+PROFILE_ID=$(create_resource $ROOT_ID "profile")
+if [ -n "$PROFILE_ID" ]; then
+    create_method $PROFILE_ID "GET" "kivaplus-users" "true"
+    create_method $PROFILE_ID "PUT" "kivaplus-users" "true"
+fi
+
+# /condominios
+CONDOMINIOS_ID=$(create_resource $ROOT_ID "condominios")
+if [ -n "$CONDOMINIOS_ID" ]; then
+    create_method $CONDOMINIOS_ID "GET" "kivaplus-condominiums" "true"
+    create_method $CONDOMINIOS_ID "POST" "kivaplus-condominiums" "true"
+
+    # /condominios/{id}
+    ID_RESOURCE_ID=$(create_resource $CONDOMINIOS_ID "{id}")
+    if [ -n "$ID_RESOURCE_ID" ]; then
+        create_method $ID_RESOURCE_ID "GET" "kivaplus-condominiums" "true"
+    fi
+fi
+
+# Deploy API
+echo "🚀 Deploying API..."
+aws apigateway create-deployment \
+    --rest-api-id $API_ID \
+    --stage-name local \
+    --stage-description "Local development stage" \
+    --endpoint-url http://localstack:4566 || echo "Deployment already exists"
+
+# Grant Lambda invoke permissions
+echo "🔑 Granting Lambda invoke permissions..."
+aws lambda add-permission \
+    --function-name kivaplus-authorizer \
+    --statement-id apigateway-invoke \
+    --action lambda:InvokeFunction \
+    --principal apigateway.amazonaws.com \
+    --source-arn "arn:aws:execute-api:us-east-1:000000000000:$API_ID/*/*" \
+    --endpoint-url http://localstack:4566 || echo "Permission already exists"
+
+aws lambda add-permission \
+    --function-name kivaplus-users \
+    --statement-id apigateway-invoke \
+    --action lambda:InvokeFunction \
+    --principal apigateway.amazonaws.com \
+    --source-arn "arn:aws:execute-api:us-east-1:000000000000:$API_ID/*/*" \
+    --endpoint-url http://localstack:4566 || echo "Permission already exists"
+
+aws lambda add-permission \
+    --function-name kivaplus-condominiums \
+    --statement-id apigateway-invoke \
+    --action lambda:InvokeFunction \
+    --principal apigateway.amazonaws.com \
+    --source-arn "arn:aws:execute-api:us-east-1:000000000000:$API_ID/*/*" \
+    --endpoint-url http://localstack:4566 || echo "Permission already exists"
+
+# Output API Gateway URL
+API_URL="http://localstack:4566/restapis/$API_ID/local/_user_request_"
+echo "✅ LocalStack infrastructure setup completed!"
+echo "🌐 API Gateway URL: $API_URL"
+echo "📝 Save this URL for integration tests: export API_GATEWAY_URL='$API_URL'"
+
+# Save API URL to file for tests
+echo "$API_URL" > /tmp/api_gateway_url.txt
+
+echo "🎉 Setup complete! You can now run integration tests."
+EOF
+
+# Make setup script executable
+RUN chmod +x setup-complete-infrastructure.sh
+
+# Default command
+CMD ["./setup-complete-infrastructure.sh"]

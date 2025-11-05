@@ -16,9 +16,8 @@ type CreateUserRequest struct {
 
 // CreateUserResponse represents the response from creating a user
 type CreateUserResponse struct {
-	User    *domain.User   `json:"user"`
-	Person  *domain.Person `json:"person"`
-	Message string         `json:"message"`
+	User   *domain.User   `json:"user"`
+	Person *domain.Person `json:"person"`
 }
 
 // LoginRequest represents the login request
@@ -47,15 +46,17 @@ type RefreshTokenResponse struct {
 
 // UpdateProfileRequest represents the request to update user profile
 type UpdateProfileRequest struct {
-	Name          string                `json:"name"`
-	PersonType    domain.PersonType     `json:"person_type"`
-	PhoneNumber   string                `json:"phone_number,omitempty"`
-	Email         string                `json:"email,omitempty"`
-	Occupation    string                `json:"occupation,omitempty"`
-	MaritalStatus *domain.MaritalStatus `json:"marital_status,omitempty"`
-	BirthdayDate  string                `json:"birthday_date,omitempty"`
-	Observations  string                `json:"observations,omitempty"`
-	Address       CreateAddressRequest  `json:"address,omitempty"`
+	Name          string               `json:"name"`
+	Document      string               `json:"document,omitempty"`
+	DocumentType  domain.DocumentType  `json:"document_type,omitempty"`
+	PersonType    domain.PersonType    `json:"person_type"`
+	PhoneNumber   string               `json:"phone_number,omitempty"`
+	Email         string               `json:"email,omitempty"`
+	Occupation    string               `json:"occupation,omitempty"`
+	MaritalStatus domain.MaritalStatus `json:"marital_status,omitempty"`
+	BirthdayDate  string               `json:"birthday_date,omitempty"`
+	Observations  string               `json:"observations,omitempty"`
+	Address       CreateAddressRequest `json:"address"`
 }
 
 type CreateAddressRequest struct {
@@ -69,10 +70,41 @@ type CreateAddressRequest struct {
 	Country      string `json:"country"`
 }
 
+// ProfileData represents the formatted profile data for responses
+type ProfileData struct {
+	Name          string               `json:"name"`
+	Email         string               `json:"email"`
+	Document      string               `json:"document,omitempty"`
+	DocumentType  domain.DocumentType  `json:"document_type,omitempty"`
+	PhoneNumber   string               `json:"phone_number,omitempty"`
+	Occupation    string               `json:"occupation,omitempty"`
+	MaritalStatus domain.MaritalStatus `json:"marital_status,omitempty"`
+	BirthdayDate  string               `json:"birthday_date,omitempty"`
+	Address       *AddressData         `json:"address,omitempty"`
+}
+
+// AddressData represents the formatted address data for responses
+type AddressData struct {
+	ZipCode      string `json:"zip_code"`
+	Street       string `json:"street"`
+	Number       string `json:"number"`
+	Complement   string `json:"complement"`
+	Neighborhood string `json:"neighborhood"`
+	City         string `json:"city"`
+	State        string `json:"state"`
+	Country      string `json:"country"`
+}
+
 type CompleteProfileResponse struct {
-	User    *domain.User   `json:"user"`
-	Person  *domain.Person `json:"person"`
-	Message string         `json:"message"`
+	Profile      *ProfileData `json:"profile"`
+	Message      string       `json:"message"`
+	AccessToken  string       `json:"access_token,omitempty"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
+}
+
+type GetProfileResponse struct {
+	Profile *ProfileData `json:"profile"`
+	Message string       `json:"message"`
 }
 
 // CreateUserService defines the interface for creating users
@@ -92,5 +124,9 @@ type RefreshTokenService interface {
 
 // CompleteProfileService defines the interface for completing user profile
 type CompleteProfileService interface {
-	Execute(ctx context.Context, usuarioID int64, req UpdateProfileRequest) (*CompleteProfileResponse, error)
+	Execute(ctx context.Context, userID int64, req UpdateProfileRequest) (*CompleteProfileResponse, error)
+}
+
+type GetProfileService interface {
+	Execute(ctx context.Context, userID int64) (*GetProfileResponse, error)
 }

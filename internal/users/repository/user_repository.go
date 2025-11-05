@@ -49,13 +49,12 @@ func (r *UserPostgresRepository) Create(ctx context.Context, user *domain.User) 
 // GetByEmail retrieves a user by email
 func (r *UserPostgresRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `
-		SELECT id, email, password_hash, active, last_access, person_id, created_at, updated_at, deleted_at
+		SELECT id, email, password_hash, active, last_access, created_at, updated_at, deleted_at
 		FROM users
 		WHERE email = $1 AND deleted_at IS NULL`
 
 	user := &domain.User{}
 	var lastAccess, deletedAt sql.NullTime
-	var personID sql.NullInt64
 
 	err := r.db.DB.QueryRowContext(ctx, query, email).Scan(
 		&user.ID,
@@ -63,7 +62,6 @@ func (r *UserPostgresRepository) GetByEmail(ctx context.Context, email string) (
 		&user.PasswordHash,
 		&user.Active,
 		&lastAccess,
-		&personID,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&deletedAt,
@@ -80,9 +78,6 @@ func (r *UserPostgresRepository) GetByEmail(ctx context.Context, email string) (
 	if lastAccess.Valid {
 		user.LastAccess = &lastAccess.Time
 	}
-	if personID.Valid {
-		user.PersonID = &personID.Int64
-	}
 	if deletedAt.Valid {
 		user.DeletedAt = &deletedAt.Time
 	}
@@ -93,13 +88,12 @@ func (r *UserPostgresRepository) GetByEmail(ctx context.Context, email string) (
 // GetByID retrieves a user by ID
 func (r *UserPostgresRepository) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 	query := `
-		SELECT id, email, password_hash, active, last_access, person_id, created_at, updated_at, deleted_at
+		SELECT id, email, password_hash, active, last_access, created_at, updated_at, deleted_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	user := &domain.User{}
 	var lastAccess, deletedAt sql.NullTime
-	var personID sql.NullInt64
 
 	err := r.db.DB.QueryRowContext(ctx, query, id).Scan(
 		&user.ID,
@@ -107,7 +101,6 @@ func (r *UserPostgresRepository) GetByID(ctx context.Context, id int64) (*domain
 		&user.PasswordHash,
 		&user.Active,
 		&lastAccess,
-		&personID,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&deletedAt,
@@ -124,9 +117,6 @@ func (r *UserPostgresRepository) GetByID(ctx context.Context, id int64) (*domain
 	if lastAccess.Valid {
 		user.LastAccess = &lastAccess.Time
 	}
-	if personID.Valid {
-		user.PersonID = &personID.Int64
-	}
 	if deletedAt.Valid {
 		user.DeletedAt = &deletedAt.Time
 	}
@@ -138,7 +128,7 @@ func (r *UserPostgresRepository) GetByID(ctx context.Context, id int64) (*domain
 func (r *UserPostgresRepository) Update(ctx context.Context, user *domain.User) error {
 	query := `
 		UPDATE users
-		SET email = $2, password_hash = $3, active = $4, last_access = $5, person_id = $6, updated_at = $7
+		SET email = $2, password_hash = $3, active = $4, last_access = $5, updated_at = $6
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	_, err := r.db.DB.ExecContext(
@@ -149,7 +139,6 @@ func (r *UserPostgresRepository) Update(ctx context.Context, user *domain.User) 
 		user.PasswordHash,
 		user.Active,
 		user.LastAccess,
-		user.PersonID,
 		time.Now(),
 	)
 

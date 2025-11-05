@@ -1,0 +1,38 @@
+# Dockerfile for Integration Tests with Go 1.24
+FROM alpine:latest
+
+# Install dependencies
+RUN apk add --no-cache \
+    git \
+    postgresql-client \
+    curl \
+    bash \
+    build-base
+
+# Install Go 1.24 manually
+RUN curl -L https://go.dev/dl/go1.24.0.linux-amd64.tar.gz | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV GOBIN="/go/bin"
+
+# Verify Go installation
+RUN go version
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Set environment for tests
+ENV GO_ENV=test
+ENV CGO_ENABLED=0
+
+# Default command runs integration tests
+CMD ["go", "test", "-tags", "integration", "./tests/integration", "-v"]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/kivaplus/kivaplus-backend/internal/shared/jwt"
 	"github.com/kivaplus/kivaplus-backend/internal/shared/logger"
@@ -26,7 +27,7 @@ func NewRefreshToken(userRepo ports.UserRepository, personRepo ports.PersonRepos
 		userRepo:   userRepo,
 		personRepo: personRepo,
 		roleRepo:   roleRepo,
-		jwtService: jwt.NewJWTService(),
+		jwtService: jwt.GetJWTService(), // Use optimized singleton
 		logger:     logger,
 	}
 }
@@ -71,12 +72,7 @@ func (uc *RefreshToken) Execute(ctx context.Context, req ports.RefreshTokenReque
 		return nil, fmt.Errorf("user account is inactive")
 	}
 
-	// Get fresh user roles (in case they changed)
-	roles, err := uc.roleRepo.GetUserRoles(ctx, user.ID)
-	if err != nil {
-		uc.logger.Error("Failed to get user roles", "error", err, "userID", user.ID)
-		return nil, fmt.Errorf("failed to get user roles: %w", err)
-	}
+	// Note: Role validation is now handled by the JWT service internally
 
 	// Check current profile status
 	hasCompleteProfile, err := uc.personRepo.HasCompleteProfile(ctx, user.ID)
@@ -90,9 +86,10 @@ func (uc *RefreshToken) Execute(ctx context.Context, req ports.RefreshTokenReque
 		profileStatus = "complete"
 	}
 
-	// Generate new access token with fresh data
+	// Generate new access token with fresh data - Use optimized method
 	userIDStr = fmt.Sprintf("%d", user.ID)
-	newAccessToken, err := uc.jwtService.GenerateToken(userIDStr, user.Email, roles, profileStatus)
+	tokenVersion := time.Now().Unix() // Generate new version for token invalidation
+	newAccessToken, err := uc.jwtService.GenerateToken(userIDStr, user.Email, profileStatus, tokenVersion)
 	if err != nil {
 		uc.logger.Error("Failed to generate new access token", "error", err, "userID", userID)
 		return nil, fmt.Errorf("failed to generate new access token: %w", err)

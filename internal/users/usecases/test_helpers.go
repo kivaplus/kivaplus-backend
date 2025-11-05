@@ -125,6 +125,19 @@ func (m *MockRoleRepository) GetUserRolesInCondominium(ctx context.Context, user
 	return args.Get(0).([]jwt.Role), args.Error(1)
 }
 
+func (m *MockRoleRepository) RemoveUserRoleWithoutCondominium(ctx context.Context, userID int64, roleID int) error {
+	args := m.Called(ctx, userID, roleID)
+	return args.Error(0)
+}
+
+func (m *MockRoleRepository) GetUsersByRole(ctx context.Context, roleID int) ([]int64, error) {
+	args := m.Called(ctx, roleID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]int64), args.Error(1)
+}
+
 type MockAddressRepository struct {
 	mock.Mock
 }
@@ -155,6 +168,51 @@ func (m *MockAddressRepository) Delete(ctx context.Context, id int64) error {
 	return args.Error(0)
 }
 
+type MockPersonDocumentRepository struct {
+	mock.Mock
+}
+
+func (m *MockPersonDocumentRepository) Create(ctx context.Context, document *domain.PersonDocument) error {
+	args := m.Called(ctx, document)
+	return args.Error(0)
+}
+
+func (m *MockPersonDocumentRepository) GetByPersonID(ctx context.Context, personID int64) ([]*domain.PersonDocument, error) {
+	args := m.Called(ctx, personID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.PersonDocument), args.Error(1)
+}
+
+func (m *MockPersonDocumentRepository) GetByPersonIDAndType(ctx context.Context, personID int64, docType domain.DocumentType) (*domain.PersonDocument, error) {
+	args := m.Called(ctx, personID, docType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.PersonDocument), args.Error(1)
+}
+
+func (m *MockPersonDocumentRepository) Update(ctx context.Context, document *domain.PersonDocument) error {
+	args := m.Called(ctx, document)
+	return args.Error(0)
+}
+
+func (m *MockPersonDocumentRepository) Delete(ctx context.Context, id int64) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockPersonDocumentRepository) ExistsByNumberAndType(ctx context.Context, number string, docType domain.DocumentType) (bool, error) {
+	args := m.Called(ctx, number, docType)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockPersonDocumentRepository) ExistsByNumberAndTypeForDifferentPerson(ctx context.Context, number string, docType domain.DocumentType, excludePersonID int64) (bool, error) {
+	args := m.Called(ctx, number, docType, excludePersonID)
+	return args.Bool(0), args.Error(1)
+}
+
 // Test helper functions
 func createTestUser() *domain.User {
 	user, _ := domain.NewUser("john@example.com", "SecurePass123!")
@@ -166,8 +224,35 @@ func createTestUser() *domain.User {
 func createTestRoles() []jwt.Role {
 	return []jwt.Role{
 		{
-			ID:   3,
+			ID:   4,
 			Name: "morador",
+		},
+	}
+}
+
+func createTestAdminRoles() []jwt.Role {
+	return []jwt.Role{
+		{
+			ID:   2,
+			Name: "admin",
+		},
+	}
+}
+
+func createTestSindicoRoles() []jwt.Role {
+	return []jwt.Role{
+		{
+			ID:   3,
+			Name: "sindico",
+		},
+	}
+}
+
+func createTestSuperAdminRoles() []jwt.Role {
+	return []jwt.Role{
+		{
+			ID:   1,
+			Name: "super_admin",
 		},
 	}
 }

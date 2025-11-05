@@ -28,7 +28,7 @@ func setupRefreshTokenTest() (*RefreshToken, *MockUserRepository, *MockPersonRep
 
 func createValidRefreshTokenRequest() ports.RefreshTokenRequest {
 	// Create a real JWT service to generate a valid refresh token for testing
-	jwtService := jwt.NewJWTService()
+	jwtService := jwt.GetJWTService()
 	refreshToken, _ := jwtService.GenerateRefreshToken("1", "john@example.com")
 
 	return ports.RefreshTokenRequest{
@@ -38,15 +38,13 @@ func createValidRefreshTokenRequest() ports.RefreshTokenRequest {
 
 // Success scenarios
 func TestRefreshToken_Success_CompleteProfile(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 	req := createValidRefreshTokenRequest()
 	user := createTestUser()
-	roles := createTestRoles()
 
 	// Setup mocks for success scenario
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(roles, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(true, nil)
 
 	// Execute
@@ -64,19 +62,16 @@ func TestRefreshToken_Success_CompleteProfile(t *testing.T) {
 	// Verify all mocks were called
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 func TestRefreshToken_Success_IncompleteProfile(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 	req := createValidRefreshTokenRequest()
 	user := createTestUser()
-	roles := createTestRoles()
 
 	// Setup mocks for success scenario with incomplete profile
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(roles, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(false, nil)
 
 	// Execute
@@ -90,7 +85,6 @@ func TestRefreshToken_Success_IncompleteProfile(t *testing.T) {
 
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 // Validation error scenarios
@@ -171,8 +165,8 @@ func TestRefreshToken_WrongTokenType(t *testing.T) {
 	ctx := context.Background()
 
 	// Generate an access token instead of refresh token
-	jwtService := jwt.NewJWTService()
-	accessToken, _ := jwtService.GenerateToken("1", "john@example.com", []jwt.Role{}, "complete")
+	jwtService := jwt.GetJWTService()
+	accessToken, _ := jwtService.GenerateToken("1", "john@example.com", "complete", 1)
 
 	req := ports.RefreshTokenRequest{
 		RefreshToken: accessToken, // Using access token as refresh token (wrong type)
@@ -231,38 +225,16 @@ func TestRefreshToken_InactiveUser(t *testing.T) {
 }
 
 // Repository error scenarios
-func TestRefreshToken_GetRolesError(t *testing.T) {
-	useCase, mockUserRepo, _, mockRoleRepo := setupRefreshTokenTest()
-	ctx := context.Background()
-	req := createValidRefreshTokenRequest()
-	user := createTestUser()
-
-	// Setup mocks
-	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(nil, errors.New("roles fetch failed"))
-
-	// Execute
-	result, err := useCase.Execute(ctx, req)
-
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to get user roles")
-
-	mockUserRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
-}
+// Note: GetUserRoles test removed as we now use optimized JWT service
 
 func TestRefreshToken_ProfileCheckError(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 	req := createValidRefreshTokenRequest()
 	user := createTestUser()
-	roles := createTestRoles()
 
 	// Setup mocks
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(roles, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(false, errors.New("profile check failed"))
 
 	// Execute
@@ -275,7 +247,6 @@ func TestRefreshToken_ProfileCheckError(t *testing.T) {
 
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 // Constructor test
@@ -320,11 +291,11 @@ func TestRefreshToken_ContextCancellation(t *testing.T) {
 
 // Integration-style test with realistic data
 func TestRefreshToken_RealisticScenario(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 
 	// Generate a valid refresh token for user ID 42
-	jwtService := jwt.NewJWTService()
+	jwtService := jwt.GetJWTService()
 	refreshToken, _ := jwtService.GenerateRefreshToken("42", "maria.silva@condominio.com.br")
 
 	req := ports.RefreshTokenRequest{
@@ -334,18 +305,8 @@ func TestRefreshToken_RealisticScenario(t *testing.T) {
 	user, _ := domain.NewUser("maria.silva@condominio.com.br", "MinhaSenh@Segura123!")
 	user.ID = 42
 
-	roles := []jwt.Role{
-		{
-			ID:              2,
-			Name:            "sindico",
-			CondominiumID:   func() *int64 { id := int64(100); return &id }(),
-			CondominiumName: "Edifício Residencial Jardim das Flores",
-		},
-	}
-
 	// Setup mocks
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(roles, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(true, nil)
 
 	// Execute
@@ -362,19 +323,17 @@ func TestRefreshToken_RealisticScenario(t *testing.T) {
 	// Verify all mocks were called
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 // Test with empty roles
 func TestRefreshToken_EmptyRoles(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 	req := createValidRefreshTokenRequest()
 	user := createTestUser()
 
-	// Setup mocks with empty roles
+	// Setup mocks
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return([]jwt.Role{}, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(true, nil)
 
 	// Execute
@@ -388,26 +347,17 @@ func TestRefreshToken_EmptyRoles(t *testing.T) {
 
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 // Test with multiple roles
 func TestRefreshToken_MultipleRoles(t *testing.T) {
-	useCase, mockUserRepo, mockPersonRepo, mockRoleRepo := setupRefreshTokenTest()
+	useCase, mockUserRepo, mockPersonRepo, _ := setupRefreshTokenTest()
 	ctx := context.Background()
 	req := createValidRefreshTokenRequest()
 	user := createTestUser()
 
-	// Multiple roles scenario
-	roles := []jwt.Role{
-		{ID: 1, Name: "super_admin"},
-		{ID: 2, Name: "sindico", CondominiumID: func() *int64 { id := int64(100); return &id }()},
-		{ID: 3, Name: "morador", CondominiumID: func() *int64 { id := int64(200); return &id }()},
-	}
-
 	// Setup mocks
 	mockUserRepo.On("GetByID", ctx, user.ID).Return(user, nil)
-	mockRoleRepo.On("GetUserRoles", ctx, user.ID).Return(roles, nil)
 	mockPersonRepo.On("HasCompleteProfile", ctx, user.ID).Return(true, nil)
 
 	// Execute
@@ -421,7 +371,6 @@ func TestRefreshToken_MultipleRoles(t *testing.T) {
 
 	mockUserRepo.AssertExpectations(t)
 	mockPersonRepo.AssertExpectations(t)
-	mockRoleRepo.AssertExpectations(t)
 }
 
 // Test invalid user ID in token

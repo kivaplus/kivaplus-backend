@@ -1,0 +1,183 @@
+name: Sync Routes Configuration
+
+on:
+  push:
+    paths:
+      - "configs/routes.json"
+      - "internal/shared/routes/**"
+    branches:
+      - main
+      - develop
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Target environment"
+        required: true
+        default: "development"
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+jobs:
+  validate-and-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout backend repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Validate routes configuration
+        run: |
+          cd kivaplus-backend
+          make routes-validate
+
+      - name: Generate configuration artifacts
+        id: generate-artifacts
+        run: |
+          cd kivaplus-backend
+
+          # Create distribution directory
+          mkdir -p dist/routes-config
+
+          # Copy configuration
+          cp configs/routes.json dist/routes-config/
+
+          # Generate TypeScript definitions
+          go run cmd/routes-cli/main.go -cmd=export -format=json > dist/routes-config/routes.json
+
+          # Generate summary for GitHub
+          echo "ROUTES_SUMMARY<<EOF" >> $GITHUB_OUTPUT
+          go run cmd/routes-cli/main.go -cmd=validate | grep -E "(routes|groups|Lambda)" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Create TypeScript interface
+          cat > dist/routes-config/routes.d.ts << 'EOF'
+          export interface RouteConfig {
+            name: string;
+            method: string;
+            path: string;
+            path_pattern: string;
+            public: boolean;
+            roles?: number[];
+            resource?: string;
+            action?: string;
+            scope?: string;
+            lambda: string;
+            description?: string;
+          }
+
+          export interface RouteGroup {
+            name: string;
+            description: string;
+            routes: RouteConfig[];
+          }
+
+          export interface RoutesConfiguration {
+            version: string;
+            groups: RouteGroup[];
+          }
+
+          declare const routes: RoutesConfiguration;
+          export default routes;
+          EOF
+
+          # Create JavaScript module
+          echo "module.exports = " > dist/routes-config/routes.js
+          cat dist/routes-config/routes.json >> dist/routes-config/routes.js
+
+          # Create package.json
+          cat > dist/routes-config/package.json << EOF
+          {
+            "name": "@kivaplus/routes-config",
+            "version": "$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)",
+            "description": "KivaPlus routes configuration",
+            "main": "routes.js",
+            "types": "routes.d.ts",
+            "files": ["routes.json", "routes.js", "routes.d.ts"]
+          }
+          EOF
+
+      - name: Upload to artifact registry
+        id: upload-artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: routes-config-${{ github.sha }}
+          path: kivaplus-backend/dist/routes-config/
+          retention-days: 30
+
+      - name: Create GitHub Release with Config
+        if: github.ref == 'refs/heads/main'
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: routes-config-${{ github.run_number }}
+          release_name: Routes Config ${{ github.run_number }}
+          body: |
+            ## Routes Configuration Update
+
+            **Commit:** ${{ github.sha }}
+            **Branch:** ${{ github.ref_name }}
+
+            ### Summary
+            ${{ steps.generate-artifacts.outputs.ROUTES_SUMMARY }}
+
+            ### Changes
+            - Updated routes configuration
+            - Validated all route definitions
+            - Generated TypeScript definitions
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: kivaplus-backend/dist/routes-config/routes.json
+          asset_name: routes.json
+          asset_content_type: application/json
+
+      - name: Trigger infrastructure update
+        if: github.ref == 'refs/heads/main'
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+          repository: ${{ secrets.INFRA_REPO_NAME }}
+          event-type: routes-config-updated
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "run_id": "${{ github.run_id }}",
+              "artifact_name": "routes-config-${{ github.sha }}",
+              "release_tag": "routes-config-${{ github.run_number }}",
+              "download_url": "${{ steps.create-release.outputs.html_url }}",
+              "environment": "${{ github.event.inputs.target_environment || 'development' }}",
+              "summary": "${{ steps.generate-artifacts.outputs.ROUTES_SUMMARY }}"
+            }
+
+      - name: Notify Slack
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: "#deployments"
+          text: |
+            Routes configuration sync ${{ job.status }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

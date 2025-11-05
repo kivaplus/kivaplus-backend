@@ -3,148 +3,146 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"net/http"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/kivaplus/kivaplus-backend/internal/shared/cache"
+	"github.com/kivaplus/kivaplus-backend/internal/shared/jwt"
 	"github.com/kivaplus/kivaplus-backend/internal/shared/logger"
+	"github.com/kivaplus/kivaplus-backend/internal/shared/permissions"
+	"github.com/kivaplus/kivaplus-backend/internal/shared/response"
 	"github.com/kivaplus/kivaplus-backend/internal/users/ports"
 )
 
 // HTTPHandler handles HTTP requests for user operations
 type HTTPHandler struct {
-	createUserUC      ports.CreateUserService
-	loginUC           ports.LoginService
-	refreshTokenUC    ports.RefreshTokenService
+	getProfileUC      ports.GetProfileService
 	completeProfileUC ports.CompleteProfileService
+	permissionChecker *permissions.EnhancedChecker
+	permissionService *permissions.Service
+	cache             *cache.RedisService
 	logger            logger.Logger
 }
 
-// NewHTTPHandler creates a new HTTP handler
-func NewHTTPHandler(createUserUC ports.CreateUserService, loginUC ports.LoginService, refreshTokenUC ports.RefreshTokenService, completeProfileUC ports.CompleteProfileService, logger logger.Logger) *HTTPHandler {
+// NewHTTPHandler creates a new HTTP handler with enhanced permissions
+func NewHTTPHandler(
+	getProfileUC ports.GetProfileService,
+	completeProfileUC ports.CompleteProfileService,
+	permissionChecker *permissions.EnhancedChecker,
+	permissionService *permissions.Service,
+	cache *cache.RedisService,
+	logger logger.Logger,
+) *HTTPHandler {
 	return &HTTPHandler{
-		createUserUC:      createUserUC,
-		loginUC:           loginUC,
-		refreshTokenUC:    refreshTokenUC,
+		getProfileUC:      getProfileUC,
 		completeProfileUC: completeProfileUC,
+		permissionChecker: permissionChecker,
+		permissionService: permissionService,
+		cache:             cache,
 		logger:            logger,
 	}
 }
 
-// Register handles user registration
-func (h *HTTPHandler) Register(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	h.logger.Info("Processing user registration request")
-
-	var req ports.CreateUserRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		h.logger.Error("Failed to unmarshal registration request", "error", err)
-		return h.errorResponse(http.StatusBadRequest, "Invalid request body"), nil
-	}
-
-	user, err := h.createUserUC.Execute(ctx, req)
-	if err != nil {
-		h.logger.Error("Failed to create user", "error", err)
-
-		// Check if it's a validation error or user already exists
-		if contains(err.Error(), "validation failed") || contains(err.Error(), "already exists") {
-			return h.errorResponse(http.StatusBadRequest, err.Error()), nil
-		}
-
-		return h.errorResponse(http.StatusInternalServerError, "Internal server error"), nil
-	}
-
-	response := map[string]interface{}{
-		"message": "User created successfully",
-		"user":    user,
-	}
-
-	return h.successResponse(http.StatusCreated, response), nil
-}
-
-// Login handles user authentication
-func (h *HTTPHandler) Login(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	h.logger.Info("Processing user login request")
-
-	var req ports.LoginRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		h.logger.Error("Failed to unmarshal login request", "error", err)
-		return h.errorResponse(http.StatusBadRequest, "Invalid request body"), nil
-	}
-
-	loginResponse, err := h.loginUC.Execute(ctx, req)
-	if err != nil {
-		h.logger.Error("Failed to authenticate user", "error", err)
-
-		// Check if it's invalid credentials
-		if contains(err.Error(), "invalid credentials") || contains(err.Error(), "inactive") {
-			return h.errorResponse(http.StatusUnauthorized, "Invalid credentials"), nil
-		}
-
-		return h.errorResponse(http.StatusInternalServerError, "Internal server error"), nil
-	}
-
-	response := map[string]interface{}{
-		"access_token":  loginResponse.AccessToken,
-		"refresh_token": loginResponse.RefreshToken,
-		"user": map[string]interface{}{
-			"id":     loginResponse.User.ID,
-			"email":  loginResponse.User.Email,
-			"active": loginResponse.User.Active,
-		},
-	}
-
-	return h.successResponse(http.StatusOK, response), nil
-}
-
-// GetProfile handles getting user profile (placeholder)
+// GetProfile handles getting user profile with enhanced validation
 func (h *HTTPHandler) GetProfile(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	h.logger.Info("Processing get profile request")
 
-	// TODO: Extract user ID from JWT token in Authorization header
-	// TODO: Implement get profile use case
+	// Validate request with permission checking
+	validator := h.permissionChecker.NewValidator(ctx, request)
+	enhancedClaims, err := validator.RequirePermission("profile", "read", nil)
+	if err != nil {
+		h.logger.Error("Permission validation failed", "error", err)
+		return response.Unauthorized("Access denied"), nil
+	}
 
-	return h.errorResponse(http.StatusNotImplemented, "Not implemented yet"), nil
+	userID, err := enhancedClaims.GetUserID()
+	if err != nil {
+		h.logger.Error("Invalid user ID in token", "error", err)
+		return response.Unauthorized("Invalid token"), nil
+	}
+
+	h.logger.Info("Validated user access", "userID", userID)
+
+	getProfile, err := h.getProfileUC.Execute(ctx, userID)
+	if err != nil {
+		h.logger.Error("Failed to get user profile", "error", err, "userID", userID)
+		return response.InternalServerError("Failed to retrieve profile"), nil
+	}
+
+	h.logger.Info("Retrieved user profile", "userID", userID)
+	return response.OK(getProfile.Profile, "Profile retrieved successfully"), nil
 }
 
-// UpdateProfile handles updating user profile (placeholder)
+// UpdateProfile handles updating user profile with optimized token management
 func (h *HTTPHandler) UpdateProfile(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	h.logger.Info("Processing update profile request")
 
-	// TODO: Extract user ID from JWT token in Authorization header
-	// TODO: Implement update profile use case
+	// Validate request with permission checking
+	validator := h.permissionChecker.NewValidator(ctx, request)
+	enhancedClaims, err := validator.RequirePermission("profile", "update", nil)
+	if err != nil {
+		h.logger.Error("Permission validation failed", "error", err)
+		return response.Unauthorized("Access denied"), nil
+	}
 
-	return h.errorResponse(http.StatusNotImplemented, "Not implemented yet"), nil
+	userID, err := enhancedClaims.GetUserID()
+	if err != nil {
+		h.logger.Error("Invalid user ID in token", "error", err)
+		return response.Unauthorized("Invalid token"), nil
+	}
+
+	// Parse request body
+	var req ports.UpdateProfileRequest
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		h.logger.Error("Failed to unmarshal update profile request", "error", err)
+		return response.BadRequest("Invalid request body"), nil
+	}
+
+	// Execute the complete profile use case
+	result, err := h.completeProfileUC.Execute(ctx, userID, req)
+	if err != nil {
+		h.logger.Error("Failed to update profile", "error", err, "userID", userID)
+
+		// Check if it's a validation error
+		if strings.Contains(err.Error(), "validation failed") {
+			return response.UnprocessableEntity(err.Error()), nil
+		}
+
+		return response.InternalServerError("Failed to update profile"), nil
+	}
+
+	// Invalidate user permissions cache after profile update
+	if err := h.permissionService.InvalidateUserPermissions(ctx, enhancedClaims.Claims.UserID); err != nil {
+		h.logger.Warn("Failed to invalidate user permissions cache", "userID", userID, "error", err)
+	}
+
+	// For profile completion, generate new token with updated version
+	if result.AccessToken != "" {
+		tokens := map[string]string{
+			"access_token":  result.AccessToken,
+			"refresh_token": result.RefreshToken,
+		}
+		return response.ProfileUpdated(result.Profile, tokens), nil
+	}
+
+	return response.ProfileUpdated(result.Profile), nil
 }
 
 // Helper methods
 
-func (h *HTTPHandler) successResponse(statusCode int, data interface{}) events.APIGatewayProxyResponse {
-	body, _ := json.Marshal(data)
-	return events.APIGatewayProxyResponse{
-		StatusCode: statusCode,
-		Headers: map[string]string{
-			"Content-Type":                 "application/json",
-			"Access-Control-Allow-Origin":  "*",
-			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type, Authorization",
-		},
-		Body: string(body),
+// validateRequest provides a fluent interface for request validation
+func (h *HTTPHandler) validateRequest(ctx context.Context, request events.APIGatewayProxyRequest) *permissions.RequestValidator {
+	return h.permissionChecker.NewValidator(ctx, request)
+}
+
+// invalidateUserCache invalidates all cached data for a user
+func (h *HTTPHandler) invalidateUserCache(ctx context.Context, userID string) {
+	if err := h.permissionService.InvalidateUserPermissions(ctx, userID); err != nil {
+		h.logger.Warn("Failed to invalidate user cache", "userID", userID, "error", err)
 	}
 }
 
-func (h *HTTPHandler) errorResponse(statusCode int, message string) events.APIGatewayProxyResponse {
-	errorBody := map[string]string{"error": message}
-	body, _ := json.Marshal(errorBody)
-	return events.APIGatewayProxyResponse{
-		StatusCode: statusCode,
-		Headers: map[string]string{
-			"Content-Type":                 "application/json",
-			"Access-Control-Allow-Origin":  "*",
-			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type, Authorization",
-		},
-		Body: string(body),
-	}
-}
+// Old helper methods removed - now using shared response utilities
 
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) &&
@@ -161,60 +159,39 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
-// ListUsers handles listing users (admin/sindico only)
+// ListUsers handles listing users with enhanced permission checking
 func (h *HTTPHandler) ListUsers(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	h.logger.Info("Processing list users request")
 
-	// TODO: Implement list users use case
-	// TODO: Apply filters based on user role (sindico can only see users from their condominios)
-
-	response := map[string]interface{}{
-		"message": "List users endpoint - implementation pending",
-		"users":   []interface{}{},
-	}
-
-	return h.successResponse(http.StatusOK, response), nil
-}
-
-// RefreshToken handles token refresh requests
-func (h *HTTPHandler) RefreshToken(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	h.logger.Info("Processing refresh token request")
-
-	var req ports.RefreshTokenRequest
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		h.logger.Error("Failed to parse refresh token request", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 400,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid request format"}`,
-		}, nil
-	}
-
-	refreshResponse, err := h.refreshTokenUC.Execute(ctx, req)
+	// Validate request with admin permission checking
+	validator := h.permissionChecker.NewValidator(ctx, request)
+	enhancedClaims, err := validator.RequirePermission("usuarios", "list", nil)
 	if err != nil {
-		h.logger.Error("Failed to refresh token", "error", err)
-		return events.APIGatewayProxyResponse{
-			StatusCode: 401,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: `{"error":"Invalid refresh token"}`,
-		}, nil
+		h.logger.Error("Permission validation failed", "error", err)
+		return response.InsufficientPermissions("admin access required"), nil
 	}
 
-	response := map[string]interface{}{
-		"access_token":  refreshResponse.AccessToken,
-		"refresh_token": refreshResponse.RefreshToken,
+	// Check if user has admin access
+	hasAdminAccess := enhancedClaims.HasRole(int(jwt.RoleSuperAdmin)) ||
+		enhancedClaims.HasRole(int(jwt.RoleAdmin)) ||
+		enhancedClaims.HasRole(int(jwt.RoleSindico))
+
+	if !hasAdminAccess {
+		return response.InsufficientPermissions("admin access required"), nil
 	}
 
-	responseBody, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
+	// TODO: Implement list users use case with proper filtering
+	// TODO: Apply filters based on user role (admin/sindico can only see users from their condominios)
+
+	data := map[string]interface{}{
+		"users": []interface{}{},
+		"user_permissions": map[string]interface{}{
+			"is_super_admin": enhancedClaims.HasRole(int(jwt.RoleSuperAdmin)),
+			"is_admin":       enhancedClaims.HasRole(int(jwt.RoleAdmin)),
+			"is_sindico":     enhancedClaims.HasRole(int(jwt.RoleSindico)),
+			"condominiums":   enhancedClaims.GetCondominiumsWithRole(int(jwt.RoleAdmin)),
 		},
-		Body: string(responseBody),
-	}, nil
+	}
+
+	return response.OK(data, "List users endpoint - implementation pending"), nil
 }

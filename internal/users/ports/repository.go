@@ -34,16 +34,16 @@ type UserRepository interface {
 // PersonRepository defines the interface for person data operations
 type PersonRepository interface {
 	// Create creates a new person
-	Create(ctx context.Context, pessoa *domain.Person) error
+	Create(ctx context.Context, person *domain.Person) error
 
 	// GetByID retrieves a person by ID
 	GetByID(ctx context.Context, id int64) (*domain.Person, error)
 
 	// GetByUserID retrieves a person by user ID
-	GetByUserID(ctx context.Context, usuarioID int64) (*domain.Person, error)
+	GetByUserID(ctx context.Context, userID int64) (*domain.Person, error)
 
 	// Update updates an existing person
-	Update(ctx context.Context, pessoa *domain.Person) error
+	Update(ctx context.Context, person *domain.Person) error
 
 	// Delete soft deletes a person
 	Delete(ctx context.Context, id int64) error
@@ -63,8 +63,14 @@ type RoleRepository interface {
 	// RemoveUserRole removes a role from a user
 	RemoveUserRole(ctx context.Context, userID int64, roleID int, condominiumID *int64) error
 
+	// RemoveUserRoleWithoutCondominium removes a role from a user that has no condominium_id (NULL)
+	RemoveUserRoleWithoutCondominium(ctx context.Context, userID int64, roleID int) error
+
 	// GetUserRolesInCondominium retrieves user roles in a specific condominium
 	GetUserRolesInCondominium(ctx context.Context, userID int64, condominiumID int64) ([]jwt.Role, error)
+
+	// GetUsersByRole retrieves all users with a specific role (for security validation)
+	GetUsersByRole(ctx context.Context, roleID int) ([]int64, error)
 }
 
 type AddressRepository interface {
@@ -79,4 +85,28 @@ type AddressRepository interface {
 
 	// Delete soft deletes an address
 	Delete(ctx context.Context, id int64) error
+}
+
+// PersonDocumentRepository defines the interface for person document data operations
+type PersonDocumentRepository interface {
+	// Create creates a new person document
+	Create(ctx context.Context, document *domain.PersonDocument) error
+
+	// GetByPersonID retrieves all documents for a person
+	GetByPersonID(ctx context.Context, personID int64) ([]*domain.PersonDocument, error)
+
+	// GetByPersonIDAndType retrieves a specific document type for a person
+	GetByPersonIDAndType(ctx context.Context, personID int64, docType domain.DocumentType) (*domain.PersonDocument, error)
+
+	// Update updates an existing person document
+	Update(ctx context.Context, document *domain.PersonDocument) error
+
+	// Delete deletes a person document
+	Delete(ctx context.Context, id int64) error
+
+	// ExistsByNumberAndType checks if a document with the same number and type already exists
+	ExistsByNumberAndType(ctx context.Context, number string, docType domain.DocumentType) (bool, error)
+
+	// ExistsByNumberAndTypeForDifferentPerson checks if a document exists for a different person
+	ExistsByNumberAndTypeForDifferentPerson(ctx context.Context, number string, docType domain.DocumentType, excludePersonID int64) (bool, error)
 }

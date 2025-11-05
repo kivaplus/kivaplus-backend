@@ -70,7 +70,7 @@ func (r *PersonPostgresRepository) Create(ctx context.Context, person *domain.Pe
 func (r *PersonPostgresRepository) GetByID(ctx context.Context, id int64) (*domain.Person, error) {
 	query := `
 		SELECT id, name, person_type, phone_number, email, address_id, occupation, marital_status,
-		 birthday, user_id, observations, created_at, updated_at, deleted_at
+		 birthday, user_id, observation, created_at, updated_at, deleted_at
 		FROM person
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -147,7 +147,7 @@ func (r *PersonPostgresRepository) HasCompleteProfile(ctx context.Context, userI
 // GetByUserID retrieves a person by user ID
 func (r *PersonPostgresRepository) GetByUserID(ctx context.Context, userID int64) (*domain.Person, error) {
 	query := `
-		SELECT id, name, person_type, phone_number, email, address_id, occupation, marital_status, birthday, user_id, observations, created_at, updated_at, deleted_at
+		SELECT id, name, person_type, phone_number, email, address_id, occupation, marital_status, birthday, user_id, observation, created_at, updated_at, deleted_at
 		FROM person
 		WHERE user_id = $1 AND deleted_at IS NULL`
 
@@ -200,7 +200,7 @@ func (r *PersonPostgresRepository) GetByUserID(ctx context.Context, userID int64
 func (r *PersonPostgresRepository) Update(ctx context.Context, person *domain.Person) error {
 	query := `
 		UPDATE person
-		SET name = $2, person_type = $3, phone_number = $4, email = $5, address_id = $6, occupation = $7, marital_status = $8, birthday = $9, user_id = $10, observations = $11, updated_at = $12
+		SET name = $2, person_type = $3, phone_number = $4, email = $5, address_id = $6, occupation = $7, marital_status = $8, birthday = $9, user_id = $10, observation = $11, updated_at = $12
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	_, err := r.db.DB.ExecContext(
@@ -261,7 +261,7 @@ func validateFields(person *domain.Person, data PersonData) {
 		person.MaritalStatus = ec
 	}
 	if data.birthdayDate.Valid {
-		person.BirthdayDate = data.birthdayDate.Time
+		person.BirthdayDate = &data.birthdayDate.Time
 	}
 	if data.userID.Valid {
 		person.UserID = &data.userID.Int64

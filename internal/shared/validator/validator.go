@@ -98,3 +98,32 @@ func (v *Validator) ValidateMaxLength(field, value string, maxLength int) {
 		v.AddError(field, fmt.Sprintf("%s must be at most %d characters long", field, maxLength))
 	}
 }
+
+// ValidateDocument validates document format based on type
+func (v *Validator) ValidateDocument(field, document, docType string) {
+	if document == "" {
+		v.AddError(field, "document is required")
+		return
+	}
+
+	// Remove any non-digit characters for validation
+	digits := ""
+	for _, char := range document {
+		if char >= '0' && char <= '9' {
+			digits += string(char)
+		}
+	}
+
+	switch docType {
+	case "CPF":
+		if len(digits) != 11 {
+			v.AddError(field, "CPF must have exactly 11 digits")
+		}
+	case "CNPJ":
+		if len(digits) != 14 {
+			v.AddError(field, "CNPJ must have exactly 14 digits")
+		}
+	default:
+		v.AddError("document_type", "document type must be CPF or CNPJ")
+	}
+}
